@@ -333,6 +333,14 @@ alternate_icon_folders = [
 
 composer_icon_folders = ["Telegram"]
 
+# ARBIGRAM: raster app icon
+filegroup(
+    name = "ArbigramIcon",
+    srcs = glob([
+        "Telegram-iOS/AppIcons.xcassets/ArbigramIcon.appiconset/*",
+    ]),
+)
+
 [
     filegroup(
         name = "{}".format(name),
@@ -538,7 +546,7 @@ aps_fragment = "" if telegram_aps_environment == "" else """
 app_groups_fragment = """
     <key>com.apple.security.application-groups</key>
     <array>
-        <string>group.{telegram_bundle_id}</string>
+        <string>group.dfbc88d056a46f1b.1</string>  <!-- ARBIGRAM -->
     </array>
     <key>application-identifier</key>
     <string>{telegram_team_id}.{telegram_bundle_id}</string>
@@ -1777,7 +1785,7 @@ ios_application(
         ":RequiredDeviceCapabilitiesPlist",
         ":UrlTypesInfoPlist",
     ],
-    app_icons = [ ":{}_icon".format(name) for name in composer_icon_folders ],
+    app_icons = [":ArbigramIcon"],  # ARBIGRAM
     alternate_icons = [
         ":{}".format(name) for name in alternate_icon_folders
     ],
@@ -1795,17 +1803,8 @@ ios_application(
     strings = [
         ":AppStringResources",
     ],
-    extensions = select({
-        ":disableExtensionsSetting": [],
-        "//conditions:default": [
-            ":ShareExtension",
-            ":NotificationContentExtension",
-            ":NotificationServiceExtension" + notificationServiceExtensionVersion,
-            ":IntentsExtension",
-            ":WidgetExtension",
-            ":BroadcastUploadExtension",
-        ],
-    }),
+    # ARBIGRAM: no app extensions — the signing profile covers one app id only
+    extensions = [],
     # Embed the in-repo tgwatch watch app (Telegram/WatchApp) under Watch/ only when
     # --//Telegram:embedWatchApp is set (Make.py sets it for device configs when
     # --embedWatchApp is passed). Off by default, so simulator/dev builds are unaffected.

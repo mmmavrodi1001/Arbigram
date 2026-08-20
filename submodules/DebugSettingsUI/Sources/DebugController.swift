@@ -1671,7 +1671,8 @@ public func debugController(sharedContext: SharedAccountContext, context: Accoun
         return getNavigationControllerImpl?()
     })
     
-    let appGroupName = "group.\(Bundle.main.bundleIdentifier!)"
+    // ARBIGRAM: container name comes from the signing profile
+    let appGroupName = "group.dfbc88d056a46f1b.1"
     let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
     
     var hasLegacyAppData = false

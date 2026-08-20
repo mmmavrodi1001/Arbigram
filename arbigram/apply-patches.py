@@ -15,20 +15,34 @@ import sys
 APPLIED = []
 FAILED = []
 
+# The signing profile grants a fixed set of app-group containers whose names are
+# unrelated to the bundle id, so both the entitlement and the runtime lookup are
+# pinned to one of them. Change this if the profile changes.
+APP_GROUP = 'group.dfbc88d056a46f1b.1'
 
-def patch(path, old, new, label):
+
+def patch(path, old, new, label, count=1):
+    """Replace `old` with `new` in `path`. count=0 replaces every occurrence."""
     try:
         src = io.open(path, encoding='utf-8').read()
     except IOError:
         FAILED.append((label, 'file not found: %s' % path))
         return
-    if new in src:
+    # `new` often contains `old` (a patch that inserts around its anchor), so
+    # re-running must not append a second copy. count=0 is the exception: it
+    # rewrites every remaining site, which is how partially-applied multi-site
+    # patches finish.
+    if new in src and count != 0:
         APPLIED.append((label, 'already applied'))
         return
     if old not in src:
-        FAILED.append((label, 'anchor not found in %s' % path))
+        # Nothing left to rewrite: either the patch is already in, or the
+        # upstream snippet this patch is anchored to has moved.
+        APPLIED.append((label, 'already applied')) if new in src else \
+            FAILED.append((label, 'anchor not found in %s' % path))
         return
-    io.open(path, 'w', encoding='utf-8', newline='').write(src.replace(old, new, 1))
+    io.open(path, 'w', encoding='utf-8', newline='').write(
+        src.replace(old, new, -1 if count == 0 else count))
     APPLIED.append((label, path))
 
 
@@ -174,6 +188,87 @@ patch(
     'APP_NAME=Telegram Fork',
     'APP_NAME=Arbigram',
     'xcconfig name -> Arbigram',
+)
+
+# ------------------------------------------------------------------ 6. icon
+# Upstream ships an Icon Composer bundle (Telegram.icon) assembled from layered
+# SVGs. Arbigram has a flat raster icon, so the app switches to a classic
+# .appiconset — the format actool has understood for a decade.
+ICON_FILEGROUP = '\n'.join([
+    'composer_icon_folders = ["Telegram"]',
+    '',
+    '# ARBIGRAM: raster app icon',
+    'filegroup(',
+    '    name = "ArbigramIcon",',
+    '    srcs = glob([',
+    '        "Telegram-iOS/AppIcons.xcassets/ArbigramIcon.appiconset/*",',
+    '    ]),',
+    ')',
+    '',
+])
+
+patch(
+    'Telegram/BUILD',
+    'composer_icon_folders = ["Telegram"]\n',
+    ICON_FILEGROUP,
+    'icon: filegroup declared',
+)
+
+patch(
+    'Telegram/BUILD',
+    '    app_icons = [ ":{}_icon".format(name) for name in composer_icon_folders ],',
+    '    app_icons = [":ArbigramIcon"],  # ARBIGRAM',
+    'icon: app uses the Arbigram icon set',
+)
+
+# ------------------------------------------------- 7. single-profile signing
+# The signing profile covers exactly one application id, so the six app
+# extensions (share sheet, notifications, widgets, Siri, broadcast) cannot be
+# signed and are dropped from the build.
+patch(
+    'Telegram/BUILD',
+    """    extensions = select({
+        ":disableExtensionsSetting": [],
+        "//conditions:default": [
+            ":ShareExtension",
+            ":NotificationContentExtension",
+            ":NotificationServiceExtension" + notificationServiceExtensionVersion,
+            ":IntentsExtension",
+            ":WidgetExtension",
+            ":BroadcastUploadExtension",
+        ],
+    }),""",
+    """    # ARBIGRAM: no app extensions — the signing profile covers one app id only
+    extensions = [],""",
+    'signing: app extensions dropped',
+)
+
+# --------------------------------------------------------------- 8. app group
+# Upstream derives the shared container name from the bundle id
+# ("group." + bundle id). The signing profile grants differently named
+# containers, so the entitlement and the runtime lookup both move to APP_GROUP.
+patch(
+    'Telegram/BUILD',
+    '        <string>group.{telegram_bundle_id}</string>',
+    '        <string>' + APP_GROUP + '</string>  <!-- ARBIGRAM -->',
+    'app group: entitlement pinned',
+)
+
+patch(
+    'submodules/TelegramUI/Sources/AppDelegate.swift',
+    '        let appGroupName = "group.\\(baseAppBundleId)"',
+    '        // ARBIGRAM: container name comes from the signing profile\n'
+    '        let appGroupName = "' + APP_GROUP + '"',
+    'app group: runtime lookup pinned',
+    count=0,  # AppDelegate resolves the container in more than one place
+)
+
+patch(
+    'submodules/DebugSettingsUI/Sources/DebugController.swift',
+    '    let appGroupName = "group.\\(Bundle.main.bundleIdentifier!)"',
+    '    // ARBIGRAM: container name comes from the signing profile\n'
+    '    let appGroupName = "' + APP_GROUP + '"',
+    'app group: debug screen lookup pinned',
 )
 
 # ------------------------------------------------------------------- report
