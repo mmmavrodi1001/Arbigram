@@ -284,6 +284,25 @@ patch(
     'codesigning: p12 password from env',
 )
 
+# ------------------------------------------------------------ 10. submodules
+# Two submodules are declared with URLs relative to the repository they sit in
+# ("../rlottie.git"). In TelegramMessenger/Telegram-iOS that resolves to the
+# Telegram org; in a fork it resolves to the fork owner's account, where those
+# repositories do not exist, and checkout dies with a 404. Pin them absolutely.
+patch(
+    '.gitmodules',
+    '\turl=../rlottie.git',
+    '\turl = https://github.com/TelegramMessenger/rlottie.git',
+    'submodules: rlottie url absolute',
+)
+
+patch(
+    '.gitmodules',
+    'url=../tgcalls.git',
+    'url = https://github.com/TelegramMessenger/tgcalls.git',
+    'submodules: tgcalls url absolute',
+)
+
 # ------------------------------------------------------------------- report
 for label, detail in APPLIED:
     print('  ok   %-38s %s' % (label, detail))
