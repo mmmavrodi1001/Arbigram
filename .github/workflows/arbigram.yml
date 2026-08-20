@@ -1,0 +1,142 @@
+name: Build Arbigram
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: 'Build configuration'
+        required: true
+        default: 'release_arm64'
+        type: choice
+        options:
+          - release_arm64
+          - debug_arm64
+
+concurrency:
+  group: arbigram-build
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 300
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          XCODE_VERSION=$(python3 -c "import json;print(json.load(open('versions.json'))['xcode'])")
+          echo "Requested Xcode $XCODE_VERSION"
+          ls /Applications | grep -i '^Xcode'
+          sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app/Contents/Developer"
+          xcodebuild -version
+
+      # Bazel's output paths are baked into the built binary, so the source has
+      # to sit at the same absolute path on every run for the cache to be reused.
+      - name: Stage source at a stable path
+        run: |
+          sudo mkdir -p /Users/Shared
+          sudo chown -R "$(whoami)" /Users/Shared
+          cp -R "$GITHUB_WORKSPACE" /Users/Shared/
+          mv "/Users/Shared/$(basename "$GITHUB_WORKSPACE")" /Users/Shared/arbigram
+
+      - name: Restore bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/arbigram-bazel-cache
+          key: bazel-${{ runner.os }}-${{ hashFiles('versions.json') }}-${{ github.sha }}
+          restore-keys: |
+            bazel-${{ runner.os }}-${{ hashFiles('versions.json') }}-
+            bazel-${{ runner.os }}-
+
+      - name: Write build configuration
+        env:
+          API_ID: ${{ secrets.ARBIGRAM_API_ID }}
+          API_HASH: ${{ secrets.ARBIGRAM_API_HASH }}
+          BUNDLE_ID: ${{ secrets.ARBIGRAM_BUNDLE_ID }}
+          TEAM_ID: ${{ secrets.ARBIGRAM_TEAM_ID }}
+        run: |
+          cd /Users/Shared/arbigram
+          python3 - <<'PY'
+          import json, os
+          config = {
+              'bundle_id': os.environ['BUNDLE_ID'],
+              'api_id': os.environ['API_ID'],
+              'api_hash': os.environ['API_HASH'],
+              'team_id': os.environ['TEAM_ID'],
+              'app_center_id': '0',
+              'is_internal_build': 'true',
+              'is_appstore_build': 'false',
+              'appstore_id': '0',
+              'app_specific_url_scheme': 'tg',
+              'premium_iap_product_id': '',
+              # The signing profile covers one application id, so the extensions
+              # these two flags pull in cannot be signed.
+              'enable_siri': False,
+              'enable_icloud': False,
+          }
+          os.makedirs('build-system/arbigram-configuration', exist_ok=True)
+          with open('build-system/arbigram-configuration.json', 'w') as f:
+              json.dump(config, f, indent=4)
+          PY
+          python3 -c "import json;c=json.load(open('build-system/arbigram-configuration.json'));c['api_hash']='***';c['api_id']='***';print(json.dumps(c,indent=2))"
+
+      - name: Install signing material
+        env:
+          P12_BASE64: ${{ secrets.ARBIGRAM_P12_BASE64 }}
+          PROFILE_BASE64: ${{ secrets.ARBIGRAM_PROFILE_BASE64 }}
+        run: |
+          cd /Users/Shared/arbigram
+          SIGN_DIR=build-system/arbigram-codesigning
+          mkdir -p "$SIGN_DIR/certs" "$SIGN_DIR/profiles"
+          echo "$P12_BASE64" | base64 --decode > "$SIGN_DIR/certs/Development.p12"
+          echo "$PROFILE_BASE64" | base64 --decode > "$SIGN_DIR/profiles/Telegram.mobileprovision"
+          echo "certificate: $(wc -c < "$SIGN_DIR/certs/Development.p12") bytes"
+          echo "profile:     $(wc -c < "$SIGN_DIR/profiles/Telegram.mobileprovision") bytes"
+          security cms -D -i "$SIGN_DIR/profiles/Telegram.mobileprovision" > /tmp/profile.plist
+          echo "profile application-id: $(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /tmp/profile.plist)"
+          echo "profile expires:        $(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' /tmp/profile.plist)"
+
+      - name: Build
+        env:
+          CODESIGNING_P12_PASSWORD: ${{ secrets.ARBIGRAM_P12_PASSWORD }}
+        run: |
+          cd /Users/Shared/arbigram
+          BUILD_NUMBER="$(git rev-list --count HEAD)"
+          APP_VERSION="$(python3 -c "import json;print(json.load(open('versions.json'))['app'])")"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+
+          python3 build-system/Make/ImportCertificates.py \
+            --path build-system/arbigram-codesigning/certs
+
+          python3 -u build-system/Make/Make.py \
+            --cacheDir="$HOME/arbigram-bazel-cache" \
+            --bazelUserRoot=/private/var/tmp/_bazel_arbigram \
+            build \
+            --configurationPath=build-system/arbigram-configuration.json \
+            --codesigningInformationPath=build-system/arbigram-codesigning \
+            --configuration=${{ inputs.configuration }} \
+            --buildNumber="$BUILD_NUMBER"
+
+      - name: Collect artifacts
+        run: |
+          cd /Users/Shared/arbigram
+          mkdir -p build/artifacts
+          for f in bazel-out/applebin_ios-ios_arm*-*/bin/Telegram/Telegram.ipa; do
+            cp "$f" "build/artifacts/Arbigram-$APP_VERSION-$BUILD_NUMBER.ipa"
+          done
+          ls -lh build/artifacts
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Arbigram-${{ env.APP_VERSION }}-${{ env.BUILD_NUMBER }}
+          path: /Users/Shared/arbigram/build/artifacts/*.ipa
+          if-no-files-found: error
+          retention-days: 30

@@ -271,6 +271,19 @@ patch(
     'app group: debug screen lookup pinned',
 )
 
+# ------------------------------------------------------ 9. certificate import
+# Upstream imports signing certificates with an empty password, which is right
+# for its own fake self-signed pair. A real .p12 from a signing service is
+# password-protected, so the password is read from the environment instead.
+patch(
+    'build-system/Make/ImportCertificates.py',
+    "                '-P',\n                '',",
+    "                '-P',\n"
+    "                # ARBIGRAM: real certificates ship with a password\n"
+    "                os.environ.get('CODESIGNING_P12_PASSWORD', ''),",
+    'codesigning: p12 password from env',
+)
+
 # ------------------------------------------------------------------- report
 for label, detail in APPLIED:
     print('  ok   %-38s %s' % (label, detail))

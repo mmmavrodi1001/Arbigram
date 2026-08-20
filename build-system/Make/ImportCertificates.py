@@ -47,7 +47,8 @@ def import_certificates(certificatesPath):
                 '-k',
                 keychain_name,
                 '-P',
-                '',
+                # ARBIGRAM: real certificates ship with a password
+                os.environ.get('CODESIGNING_P12_PASSWORD', ''),
                 '-T',
                 '/usr/bin/codesign',
                 '-T',
