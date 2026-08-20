@@ -3,6 +3,9 @@ import Postbox
 import SwiftSignalKit
 import TelegramApi
 
+// ARBIGRAM: master switch for sponsored (ad) messages
+private let arbigramHideSponsoredMessages = true
+
 private class AdMessagesHistoryContextImpl {
     final class CachedMessage: Equatable, Codable {
         enum CodingKeys: String, CodingKey {
@@ -491,7 +494,8 @@ private class AdMessagesHistoryContextImpl {
             return transaction.getPeer(peerId).flatMap(apiInputPeer)
         }
         |> mapToSignal { inputPeer -> Signal<(interPostInterval: Int32?, startDelay: Int32?, betweenDelay: Int32?, messages: [Message]), NoError> in
-            guard let inputPeer else {
+            // ARBIGRAM: bail out before the sponsored-message request is issued
+            guard let inputPeer, !arbigramHideSponsoredMessages else {
                 return .single((nil, nil, nil, []))
             }
             var flags: Int32 = 0

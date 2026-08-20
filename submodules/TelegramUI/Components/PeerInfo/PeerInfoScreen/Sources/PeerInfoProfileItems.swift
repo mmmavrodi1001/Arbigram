@@ -16,6 +16,7 @@ import WebUI
 import AvatarNode
 import PeerNameColorItem
 import BoostLevelIconComponent
+import UndoUI // ARBIGRAM
 
 private let enabledPublicBioEntities: EnabledEntityTypes = [.allUrl, .mention, .hashtag]
 private let enabledPrivateBioEntities: EnabledEntityTypes = [.internalUrl, .mention, .hashtag]
@@ -88,6 +89,7 @@ func infoItems(
         let ItemAbout = 3003
         let ItemNote = 3004
         let ItemAppFooter = 3005
+        let ItemArbigramPeerId = 3006 // ARBIGRAM
         let ItemAffiliate = 4000
         let ItemAffiliateInfo = 4001
         let ItemBusinessHours = 5000
@@ -171,6 +173,31 @@ func infoItems(
                 interaction.requestLayout(animated)
             }))
         }
+
+        // ARBIGRAM: numeric peer id, tap to copy
+        do {
+            let arbigramPeerIdText = "\(user.id.id._internalGetInt64Value())"
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(
+                id: ItemArbigramPeerId,
+                label: "ID",
+                text: arbigramPeerIdText,
+                textColor: .primary,
+                action: { _, _ in
+                    UIPasteboard.general.string = arbigramPeerIdText
+                    interaction.getController()?.present(UndoOverlayController(
+                        presentationData: presentationData,
+                        content: .copy(text: "ID copied"),
+                        elevatedLayout: false,
+                        animateInAsReplacement: false,
+                        action: { _ in return false }
+                    ), in: .current)
+                },
+                requestLayout: { animated in
+                    interaction.requestLayout(animated)
+                }
+            ))
+        }
+
         if let mainUsername = user.addressName {
             var additionalUsernames: String?
             let usernames = user.usernames.filter { $0.isActive && $0.username != mainUsername }
@@ -555,6 +582,31 @@ func infoItems(
         let ItemEdit = 10
         let ItemPeerPersonalChannel = 11
         let ItemCommunity = 12
+        let ItemArbigramPeerId = 13 // ARBIGRAM
+
+        // ARBIGRAM: numeric peer id, tap to copy
+        do {
+            let arbigramPeerIdText = "\(channel.id.id._internalGetInt64Value())"
+            items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(
+                id: ItemArbigramPeerId,
+                label: "ID",
+                text: arbigramPeerIdText,
+                textColor: .primary,
+                action: { _, _ in
+                    UIPasteboard.general.string = arbigramPeerIdText
+                    interaction.getController()?.present(UndoOverlayController(
+                        presentationData: presentationData,
+                        content: .copy(text: "ID copied"),
+                        elevatedLayout: false,
+                        animateInAsReplacement: false,
+                        action: { _ in return false }
+                    ), in: .current)
+                },
+                requestLayout: { animated in
+                    interaction.requestLayout(animated)
+                }
+            ))
+        }
         
         if let _ = data.threadData {
             let mainUsername: String

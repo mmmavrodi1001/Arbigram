@@ -2459,13 +2459,6 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
 }
 
 func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscriptions, isHidden: Bool) -> Bool {
-    if !storySubscriptions.items.isEmpty {
-        return true
-    }
-    if !isHidden, let accountItem = storySubscriptions.accountItem {
-        if accountItem.hasPending || accountItem.storyCount != 0 {
-            return true
-        }
-    }
+    // ARBIGRAM: stories strip removed from the chat list header
     return false
 }
