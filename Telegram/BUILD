@@ -1575,12 +1575,13 @@ plist_fragment(
     <true/>
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
+    <!-- ARBIGRAM: the app's own name; AppNameInfoPlist below only reaches the extensions -->
     <key>CFBundleDisplayName</key>
-    <string>Telegram</string>
+    <string>Arbigram</string>
     <key>CFBundleIdentifier</key>
     <string>{telegram_bundle_id}</string>
     <key>CFBundleName</key>
-    <string>Telegram</string>
+    <string>Arbigram</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleSignature</key>

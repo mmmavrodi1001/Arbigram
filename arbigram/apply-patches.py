@@ -183,6 +183,27 @@ patch(
     'display name -> Arbigram',
 )
 
+# AppNameInfoPlist above is wired into the six extensions, not into the app
+# target, which takes its name from TelegramInfoPlist. With the extensions
+# disabled for single-profile signing, that fragment reaches nothing at all.
+patch(
+    'Telegram/BUILD',
+    '''    <key>CFBundleDisplayName</key>
+    <string>Telegram</string>
+    <key>CFBundleIdentifier</key>
+    <string>{telegram_bundle_id}</string>
+    <key>CFBundleName</key>
+    <string>Telegram</string>''',
+    '''    <!-- ARBIGRAM: the app's own name; AppNameInfoPlist below only reaches the extensions -->
+    <key>CFBundleDisplayName</key>
+    <string>Arbigram</string>
+    <key>CFBundleIdentifier</key>
+    <string>{telegram_bundle_id}</string>
+    <key>CFBundleName</key>
+    <string>Arbigram</string>''',
+    'app display name -> Arbigram',
+)
+
 patch(
     'Telegram/Telegram-iOS/Config-Fork.xcconfig',
     'APP_NAME=Telegram Fork',
