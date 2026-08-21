@@ -623,32 +623,17 @@ patch(
 )
 
 # ----------------------------------------------------------------- 13. theme
-# An accent preset like any other, so Appearance switches away from it and back.
-patch(
-    'submodules/TelegramUIPreferences/Sources/PresentationThemeSettings.swift',
-    """    public static var defaultSettings: PresentationThemeSettings {
-        return PresentationThemeSettings(theme: .builtin(.dayClassic), themePreferredBaseTheme: [:], themeSpecificAccentColors: [:],""",
-    """    // ARBIGRAM: the fork's violet, matching the app icon. It is an accent
-    // preset like any other, so Appearance switches away from it and back.
-    public static let arbigramAccentColorIndex: Int32 = 108
-
-    public static var arbigramAccentColor: PresentationThemeAccentColor {
-        return PresentationThemeAccentColor(index: PresentationThemeSettings.arbigramAccentColorIndex, baseColor: .preset, accentColor: 0xFF6C4CF1, bubbleColors: [0xFFEDE7FF])
-    }
-
-    public static var defaultSettings: PresentationThemeSettings {
-        return PresentationThemeSettings(theme: .builtin(.dayClassic), themePreferredBaseTheme: [:], themeSpecificAccentColors: [PresentationThemeReference.builtin(.dayClassic).index: PresentationThemeSettings.arbigramAccentColor],""",
-    'theme: violet by default',
-)
-
+# The look itself lives in TelegramPresentationData/Sources/ArbigramTheme.swift,
+# which is the fork's own file. What follows is only what upstream has to be
+# told about it.
 PRESETS_PATH = 'submodules/SettingsUI/Sources/Themes/ThemeColorPresets.swift'
 patch(
     PRESETS_PATH,
     """var dayClassicColorPresets: [PresentationThemeAccentColor] = [
     // Pink with Blue""",
     """var dayClassicColorPresets: [PresentationThemeAccentColor] = [
-    // ARBIGRAM: first in the row, and the one a fresh install starts on
-    PresentationThemeSettings.arbigramAccentColor,
+    // ARBIGRAM: first in the row, and what the one-time migration applies
+    arbigramAccentColor(dark: false),
 
     // Pink with Blue""",
     'theme: classic preset',
@@ -659,17 +644,147 @@ patch(
     """var dayColorPresets: [PresentationThemeAccentColor] = [
     PresentationThemeAccentColor(index: 101,""",
     """var dayColorPresets: [PresentationThemeAccentColor] = [
-    PresentationThemeAccentColor(index: PresentationThemeSettings.arbigramAccentColorIndex, baseColor: .preset, accentColor: 0x6c4cf1, bubbleColors: [0x8b6dff, 0x6c4cf1]), // ARBIGRAM
+    arbigramAccentColor(dark: false), // ARBIGRAM
     PresentationThemeAccentColor(index: 101,""",
     'theme: day preset',
 )
 
 patch(
     PRESETS_PATH,
-    'var nightColorPresets: [PresentationThemeAccentColor] = [',
-    """var nightColorPresets: [PresentationThemeAccentColor] = [
-    PresentationThemeAccentColor(index: PresentationThemeSettings.arbigramAccentColorIndex, baseColor: .preset, accentColor: 0x8b6dff, bubbleColors: [0x8b6dff, 0x6c4cf1]), // ARBIGRAM""",
+    'var nightColorPresets: [PresentationThemeAccentColor] = [\n',
+    'var nightColorPresets: [PresentationThemeAccentColor] = [\n    arbigramAccentColor(dark: true), // ARBIGRAM\n',
     'theme: night preset',
+)
+
+# defaultSettings would only ever reach a fresh install, and an update installs
+# over settings that already exist, so the theme is applied once rather than
+# defaulted.
+patch(
+    'submodules/TelegramUI/Sources/SharedAccountContext.swift',
+    """        let immediateExperimentalUISettingsValue = self.immediateExperimentalUISettingsValue
+        let _ = immediateExperimentalUISettingsValue.swap(initialPresentationDataAndSettings.experimentalUISettings)
+""",
+    """        // ARBIGRAM: hand over the fork's look once. defaultSettings would only
+        // reach a fresh install, and an update installs over existing settings,
+        // so the theme has to be applied rather than defaulted. After this it
+        // belongs to Appearance and is never forced again.
+        if !ArbigramSettings.shared.didApplyTheme {
+            ArbigramSettings.shared.didApplyTheme = true
+            let _ = updatePresentationThemeSettingsInteractively(accountManager: self.accountManager, { current in
+                var current = current
+                var accentColors = current.themeSpecificAccentColors
+                accentColors[PresentationThemeReference.builtin(.dayClassic).index] = arbigramAccentColor(dark: false)
+                accentColors[PresentationThemeReference.builtin(.day).index] = arbigramAccentColor(dark: false)
+                accentColors[PresentationThemeReference.builtin(.night).index] = arbigramAccentColor(dark: true)
+                accentColors[PresentationThemeReference.builtin(.nightAccent).index] = arbigramAccentColor(dark: true)
+                current.themeSpecificAccentColors = accentColors
+                // A wallpaper already chosen for a theme wins over the accent's
+                // own, which would leave the new look half-applied.
+                current.themeSpecificChatWallpapers = [:]
+                return current
+            }).start()
+        }
+
+        let immediateExperimentalUISettingsValue = self.immediateExperimentalUISettingsValue
+        let _ = immediateExperimentalUISettingsValue.swap(initialPresentationDataAndSettings.experimentalUISettings)
+""",
+    'theme: applied once on update',
+)
+
+# ---------------------------------------------------------- 14. contacts tab
+# Calls already has an upstream switch. The tab bar is rebuilt on demand rather
+# than observed, so the root controller keeps the last calls-tab value to
+# rebuild itself when a switch changes.
+ROOT_PATH = 'submodules/TelegramUI/Sources/TelegramRootController.swift'
+patch(
+    ROOT_PATH,
+    'import AccountContext\n',
+    'import AccountContext\nimport ArbigramSettings\n',
+    'contacts tab: import',
+)
+
+patch(
+    ROOT_PATH,
+    '    public var contactsController: ContactsController?',
+    """    public var contactsController: ContactsController?
+
+    // ARBIGRAM: the tab bar is rebuilt on demand rather than observed, so the
+    // last calls-tab value is kept to rebuild it when a switch changes.
+    private var arbigramShowCallsTab: Bool = false
+    private var arbigramSettingsObserver: NSObjectProtocol?""",
+    'contacts tab: observer state',
+)
+
+patch(
+    ROOT_PATH,
+    """    deinit {
+        self.permissionsDisposable?.dispose()
+        self.presentationDataDisposable?.dispose()
+        self.applicationInFocusDisposable?.dispose()
+        self.storyUploadEventsDisposable?.dispose()
+    }""",
+    """    deinit {
+        self.permissionsDisposable?.dispose()
+        self.presentationDataDisposable?.dispose()
+        self.applicationInFocusDisposable?.dispose()
+        self.storyUploadEventsDisposable?.dispose()
+        // ARBIGRAM
+        if let arbigramSettingsObserver = self.arbigramSettingsObserver {
+            NotificationCenter.default.removeObserver(arbigramSettingsObserver)
+        }
+    }""",
+    'contacts tab: observer released',
+)
+
+patch(
+    ROOT_PATH,
+    '    public func addRootControllers(showCallsTab: Bool) {',
+    """    public func addRootControllers(showCallsTab: Bool) {
+        self.arbigramShowCallsTab = showCallsTab // ARBIGRAM
+        if self.arbigramSettingsObserver == nil {
+            self.arbigramSettingsObserver = NotificationCenter.default.addObserver(forName: ArbigramSettings.changedNotification, object: nil, queue: .main) { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                self.updateRootControllers(showCallsTab: self.arbigramShowCallsTab)
+            }
+        }""",
+    'contacts tab: observer registered',
+)
+
+patch(
+    ROOT_PATH,
+    """        controllers.append(contactsController)
+        
+        if showCallsTab {""",
+    """        if !ArbigramSettings.shared.hideContactsTab { // ARBIGRAM
+            controllers.append(contactsController)
+        }
+        
+        if showCallsTab {""",
+    'contacts tab: hidden at startup',
+)
+
+patch(
+    ROOT_PATH,
+    """    public func updateRootControllers(showCallsTab: Bool) {
+        guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
+            return
+        }
+        var controllers: [ViewController] = []
+        controllers.append(self.contactsController!)
+        if showCallsTab {""",
+    """    public func updateRootControllers(showCallsTab: Bool) {
+        self.arbigramShowCallsTab = showCallsTab // ARBIGRAM
+        guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
+            return
+        }
+        var controllers: [ViewController] = []
+        if !ArbigramSettings.shared.hideContactsTab, let contactsController = self.contactsController { // ARBIGRAM
+            controllers.append(contactsController)
+        }
+        if showCallsTab {""",
+    'contacts tab: hidden on update',
 )
 
 # ------------------------------------------------------------------- report

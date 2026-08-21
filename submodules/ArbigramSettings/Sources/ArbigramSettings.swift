@@ -27,6 +27,7 @@ public final class ArbigramSettings {
         case hideInputActivity = "arbigram.hideInputActivity"
         case ignoreCopyProtection = "arbigram.ignoreCopyProtection"
         case hideContactsTab = "arbigram.hideContactsTab"
+        case didApplyTheme = "arbigram.didApplyTheme"
 
         /// The first three replaced constants that were compiled in, so they
         /// keep that behaviour. The rest are new and stay out of the way until
@@ -35,7 +36,7 @@ public final class ArbigramSettings {
             switch self {
             case .hideStories, .hideSponsoredMessages, .showPeerId:
                 return true
-            case .skipReadHistory, .hideInputActivity, .ignoreCopyProtection, .hideContactsTab:
+            case .skipReadHistory, .hideInputActivity, .ignoreCopyProtection, .hideContactsTab, .didApplyTheme:
                 return false
             }
         }
@@ -93,6 +94,14 @@ public final class ArbigramSettings {
     public var hideContactsTab: Bool {
         get { return self.defaults.bool(forKey: Key.hideContactsTab.rawValue) }
         set { self.set(.hideContactsTab, newValue) }
+    }
+
+    /// Whether the fork's theme has been handed over once. Not a switch, and
+    /// deliberately not in the settings screen: after the one-time application
+    /// the theme belongs to Appearance like any other.
+    public var didApplyTheme: Bool {
+        get { return self.defaults.bool(forKey: Key.didApplyTheme.rawValue) }
+        set { self.set(.didApplyTheme, newValue) }
     }
 
     private func set(_ key: Key, _ value: Bool) {

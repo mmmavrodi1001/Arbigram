@@ -522,6 +522,27 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }
         })
         
+        // ARBIGRAM: hand over the fork's look once. defaultSettings would only
+        // reach a fresh install, and an update installs over existing settings,
+        // so the theme has to be applied rather than defaulted. After this it
+        // belongs to Appearance and is never forced again.
+        if !ArbigramSettings.shared.didApplyTheme {
+            ArbigramSettings.shared.didApplyTheme = true
+            let _ = updatePresentationThemeSettingsInteractively(accountManager: self.accountManager, { current in
+                var current = current
+                var accentColors = current.themeSpecificAccentColors
+                accentColors[PresentationThemeReference.builtin(.dayClassic).index] = arbigramAccentColor(dark: false)
+                accentColors[PresentationThemeReference.builtin(.day).index] = arbigramAccentColor(dark: false)
+                accentColors[PresentationThemeReference.builtin(.night).index] = arbigramAccentColor(dark: true)
+                accentColors[PresentationThemeReference.builtin(.nightAccent).index] = arbigramAccentColor(dark: true)
+                current.themeSpecificAccentColors = accentColors
+                // A wallpaper already chosen for a theme wins over the accent's
+                // own, which would leave the new look half-applied.
+                current.themeSpecificChatWallpapers = [:]
+                return current
+            }).start()
+        }
+
         let immediateExperimentalUISettingsValue = self.immediateExperimentalUISettingsValue
         let _ = immediateExperimentalUISettingsValue.swap(initialPresentationDataAndSettings.experimentalUISettings)
         

@@ -8,8 +8,8 @@ private func patternWallpaper(data: BuiltinWallpaperData, colors: [UInt32], inte
 }
 
 var dayClassicColorPresets: [PresentationThemeAccentColor] = [
-    // ARBIGRAM: first in the row, and the one a fresh install starts on
-    PresentationThemeSettings.arbigramAccentColor,
+    // ARBIGRAM: first in the row, and what the one-time migration applies
+    arbigramAccentColor(dark: false),
 
     // Pink with Blue
     PresentationThemeAccentColor(index: 106, baseColor: .preset, accentColor: 0xfff55783, bubbleColors: [0xffd6f5ff, 0xffc9fdfe], wallpaper: patternWallpaper(data: .default, colors: [0x8dc0eb, 0xb9d1ea, 0xc6b1ef, 0xebd7ef], intensity: 50, rotation: nil)),
@@ -34,7 +34,7 @@ var dayClassicColorPresets: [PresentationThemeAccentColor] = [
 ]
 
 var dayColorPresets: [PresentationThemeAccentColor] = [
-    PresentationThemeAccentColor(index: PresentationThemeSettings.arbigramAccentColorIndex, baseColor: .preset, accentColor: 0x6c4cf1, bubbleColors: [0x8b6dff, 0x6c4cf1]), // ARBIGRAM
+    arbigramAccentColor(dark: false), // ARBIGRAM
     PresentationThemeAccentColor(index: 101, baseColor: .preset, accentColor: 0x0088ff, bubbleColors: [0x0088ff, 0xff53f4], wallpaper: nil),
     PresentationThemeAccentColor(index: 102, baseColor: .preset, accentColor: 0x00b09b, bubbleColors: [0xaee946, 0x00b09b], wallpaper: nil),
     PresentationThemeAccentColor(index: 103, baseColor: .preset, accentColor: 0xd33213, bubbleColors: [0xf9db00, 0xd33213], wallpaper: nil),
@@ -42,7 +42,7 @@ var dayColorPresets: [PresentationThemeAccentColor] = [
 ]
 
 var nightColorPresets: [PresentationThemeAccentColor] = [
-    PresentationThemeAccentColor(index: PresentationThemeSettings.arbigramAccentColorIndex, baseColor: .preset, accentColor: 0x8b6dff, bubbleColors: [0x8b6dff, 0x6c4cf1]), // ARBIGRAM
+    arbigramAccentColor(dark: true), // ARBIGRAM
 //    PresentationThemeAccentColor(index: 101, baseColor: .preset, accentColor: 0x0088ff, bubbleColors: [0x0088ff, 0xff53f4], wallpaper: patternWallpaper(data: .variant4, colors: [0xe4b2ea, 0x8376c2, 0xeab9d9, 0xb493e6], intensity: -35, rotation: nil)),
     PresentationThemeAccentColor(index: 102, baseColor: .preset, accentColor: 0x00b09b, bubbleColors: [0xaee946, 0x00b09b], wallpaper: patternWallpaper(data: .variant9, colors: [0xe4b2ea, 0x8376c2, 0xeab9d9, 0xb493e6], intensity: -35, rotation: nil)),
     PresentationThemeAccentColor(index: 103, baseColor: .preset, accentColor: 0xd33213, bubbleColors: [0xf9db00, 0xd33213], wallpaper: patternWallpaper(data: .variant2, colors: [0xfec496, 0xdd6cb9, 0x962fbf, 0x4f5bd5], intensity: -40, rotation: nil)),
