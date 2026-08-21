@@ -13,6 +13,8 @@ import AppBundle
 import LocalizedPeerData
 import TooltipUI
 import TelegramNotices
+import ArbigramSettings
+import SaveToCameraRoll
 
 private func galleryMediaForMedia(media: Media) -> Media? {
     if let media = media as? TelegramMediaImage {
@@ -548,6 +550,19 @@ public final class SecretMediaPreviewController: ViewController {
                     self?.didSetReady = true
                 }
                 self._ready.set(ready |> map { true })
+                // ARBIGRAM: the file is on disk already — it has to be, it is
+                // being shown — so keeping it is a copy, not a download.
+                if ArbigramSettings.shared.saveSecretMedia {
+                    for media in message.media {
+                        if let image = media as? TelegramMediaImage {
+                            let _ = saveToCameraRoll(context: self.context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: image)).start()
+                            break
+                        } else if let file = media as? TelegramMediaFile, !file.isVoice, !file.isInstantVideo {
+                            let _ = saveToCameraRoll(context: self.context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: file)).start()
+                            break
+                        }
+                    }
+                }
                 self.markMessageAsConsumedDisposable.set(self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: message.id).start())
             } else {
                 var beginTimeAndTimeout: (Double, Double, Bool)?

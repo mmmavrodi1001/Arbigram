@@ -10,7 +10,9 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
+        "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
+        "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",
         "//submodules/Display:Display",
         "//submodules/Postbox:Postbox",

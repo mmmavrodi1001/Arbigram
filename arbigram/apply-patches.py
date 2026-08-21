@@ -1028,6 +1028,44 @@ patch(
     'hidden accounts: phrase swallowed by search',
 )
 
+# ----------------------------------------------- 17. self-destructing media
+# The viewer marks the message consumed the moment it is shown, which is also
+# the moment the file is certainly on disk. Copying it out there costs nothing
+# and needs no download.
+patch(
+    'submodules/GalleryUI/BUILD',
+    '    deps = [\n',
+    '    deps = [\n        "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM\n',
+    'secret media: GalleryUI dep',
+)
+
+patch(
+    'submodules/GalleryUI/Sources/SecretMediaPreviewController.swift',
+    'import TelegramNotices\n',
+    'import TelegramNotices\nimport ArbigramSettings\nimport SaveToCameraRoll\n',
+    'secret media: imports',
+)
+
+patch(
+    'submodules/GalleryUI/Sources/SecretMediaPreviewController.swift',
+    '                self.markMessageAsConsumedDisposable.set(self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: message.id).start())',
+    """                // ARBIGRAM: the file is on disk already — it has to be, it is
+                // being shown — so keeping it is a copy, not a download.
+                if ArbigramSettings.shared.saveSecretMedia {
+                    for media in message.media {
+                        if let image = media as? TelegramMediaImage {
+                            let _ = saveToCameraRoll(context: self.context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: image)).start()
+                            break
+                        } else if let file = media as? TelegramMediaFile, !file.isVoice, !file.isInstantVideo {
+                            let _ = saveToCameraRoll(context: self.context, userLocation: .peer(message.id.peerId), mediaReference: .message(message: MessageReference(message), media: file)).start()
+                            break
+                        }
+                    }
+                }
+                self.markMessageAsConsumedDisposable.set(self.context.engine.messages.markMessageContentAsConsumedInteractively(messageId: message.id).start())""",
+    'secret media: saved on open',
+)
+
 # ------------------------------------------------------------------- report
 for label, detail in APPLIED:
     print('  ok   %-38s %s' % (label, detail))

@@ -77,6 +77,7 @@ public final class ArbigramSettings {
         case hideInputActivity = "arbigram.hideInputActivity"
         case ignoreCopyProtection = "arbigram.ignoreCopyProtection"
         case hideContactsTab = "arbigram.hideContactsTab"
+        case saveSecretMedia = "arbigram.saveSecretMedia"
         case didApplyTheme = "arbigram.didApplyTheme"
 
         /// The first three replaced constants that were compiled in, so they
@@ -86,7 +87,7 @@ public final class ArbigramSettings {
             switch self {
             case .hideStories, .hideSponsoredMessages, .showPeerId:
                 return true
-            case .skipReadHistory, .hideInputActivity, .ignoreCopyProtection, .hideContactsTab, .didApplyTheme:
+            case .skipReadHistory, .hideInputActivity, .ignoreCopyProtection, .hideContactsTab, .saveSecretMedia, .didApplyTheme:
                 return false
             }
         }
@@ -138,6 +139,13 @@ public final class ArbigramSettings {
     public var ignoreCopyProtection: Bool {
         get { return self.defaults.bool(forKey: Key.ignoreCopyProtection.rawValue) }
         set { self.set(.ignoreCopyProtection, newValue) }
+    }
+
+    /// Self-destructing photos and videos, copied to the camera roll as they
+    /// are opened. The file is already downloaded by then — this only keeps it.
+    public var saveSecretMedia: Bool {
+        get { return self.defaults.bool(forKey: Key.saveSecretMedia.rawValue) }
+        set { self.set(.saveSecretMedia, newValue) }
     }
 
     /// The Contacts tab. Calls already has an upstream switch of its own.

@@ -24,6 +24,7 @@ private enum ArbigramSettingsSection: Int32 {
     case inputActivity
     case copyProtection
     case contactsTab
+    case secretMedia
     case notificationAccounts
     case accounts
     case secretPhrase
@@ -51,6 +52,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
     case hideInputActivity
     case ignoreCopyProtection
     case hideContactsTab
+    case saveSecretMedia
 
     var section: ArbigramSettingsSection {
         switch self {
@@ -61,6 +63,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .hideInputActivity: return .inputActivity
         case .ignoreCopyProtection: return .copyProtection
         case .hideContactsTab: return .contactsTab
+        case .saveSecretMedia: return .secretMedia
         }
     }
 
@@ -80,6 +83,8 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings, "Копировать и скачивать везде", "Ignore Copy Protection")
         case .hideContactsTab:
             return loc(strings, "Скрыть вкладку «Контакты»", "Hide the Contacts Tab")
+        case .saveSecretMedia:
+            return loc(strings, "Сохранять сгорающие медиа", "Save Self-Destructing Media")
         }
     }
 
@@ -113,6 +118,10 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings,
                        "Убирает «Контакты» из нижней панели. Сами контакты остаются — их видно через поиск. Вкладка «Звонки» прячется своим переключателем в Настройках → Звонки.",
                        "Removes Contacts from the tab bar. The contacts themselves stay and remain reachable through search. The Calls tab has its own switch under Settings, Calls.")
+        case .saveSecretMedia:
+            return loc(strings,
+                       "Фото и видео с таймером сохраняются в галерею в момент открытия. Отправитель по-прежнему увидит, что ты их посмотрел — это отдельная отметка, и она уходит так же, как раньше.",
+                       "Photos and videos with a timer are copied to the camera roll as they open. The sender still sees that you viewed them — that is a separate receipt and it is sent as before.")
         }
     }
 
@@ -125,6 +134,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .hideInputActivity: return settings.hideInputActivity
         case .ignoreCopyProtection: return settings.ignoreCopyProtection
         case .hideContactsTab: return settings.hideContactsTab
+        case .saveSecretMedia: return settings.saveSecretMedia
         }
     }
 
@@ -137,6 +147,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .hideInputActivity: ArbigramSettings.shared.hideInputActivity = value
         case .ignoreCopyProtection: ArbigramSettings.shared.ignoreCopyProtection = value
         case .hideContactsTab: ArbigramSettings.shared.hideContactsTab = value
+        case .saveSecretMedia: ArbigramSettings.shared.saveSecretMedia = value
         }
     }
 }
@@ -239,6 +250,7 @@ private struct ArbigramSettingsState: Equatable {
     var hideInputActivity: Bool
     var ignoreCopyProtection: Bool
     var hideContactsTab: Bool
+    var saveSecretMedia: Bool
     var mutedAccountCount: Int
     var secretPhrase: String
     var hasHiddenAccounts: Bool
@@ -253,6 +265,7 @@ private struct ArbigramSettingsState: Equatable {
         self.hideInputActivity = settings.hideInputActivity
         self.ignoreCopyProtection = settings.ignoreCopyProtection
         self.hideContactsTab = settings.hideContactsTab
+        self.saveSecretMedia = settings.saveSecretMedia
         self.mutedAccountCount = settings.mutedAccountIds.count
         self.secretPhrase = settings.secretPhrase
         self.hasHiddenAccounts = settings.hasHiddenAccounts
