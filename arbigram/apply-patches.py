@@ -254,13 +254,30 @@ patch(
     'app group: entitlement pinned',
 )
 
+# AppDelegate resolves the container in two places. In urlSession(identifier:)
+# the bundle id has no other reader, so pinning the group name orphans it, and
+# this build treats an unused binding as an error. That site is rewritten first,
+# binding and all; the pass below then catches the remaining one, where
+# baseAppBundleId is still handed to BuildConfig.
+patch(
+    'submodules/TelegramUI/Sources/AppDelegate.swift',
+    '        let baseAppBundleId = Bundle.main.bundleIdentifier!\n'
+    '        let appGroupName = "group.\\(baseAppBundleId)"\n\n'
+    '        let configuration = URLSessionConfiguration.background(withIdentifier: identifier)',
+    '        // ARBIGRAM: container name comes from the signing profile; upstream derived\n'
+    '        // it from the bundle id, which left baseAppBundleId with no other reader here\n'
+    '        let appGroupName = "' + APP_GROUP + '"\n\n'
+    '        let configuration = URLSessionConfiguration.background(withIdentifier: identifier)',
+    'app group: url session lookup pinned',
+)
+
 patch(
     'submodules/TelegramUI/Sources/AppDelegate.swift',
     '        let appGroupName = "group.\\(baseAppBundleId)"',
     '        // ARBIGRAM: container name comes from the signing profile\n'
     '        let appGroupName = "' + APP_GROUP + '"',
     'app group: runtime lookup pinned',
-    count=0,  # AppDelegate resolves the container in more than one place
+    count=0,
 )
 
 patch(

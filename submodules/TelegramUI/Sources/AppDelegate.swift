@@ -286,8 +286,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
             return existingSession
         }
         
-        let baseAppBundleId = Bundle.main.bundleIdentifier!
-        // ARBIGRAM: container name comes from the signing profile
+        // ARBIGRAM: container name comes from the signing profile; upstream derived
+        // it from the bundle id, which left baseAppBundleId with no other reader here
         let appGroupName = "group.dfbc88d056a46f1b.1"
 
         let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
