@@ -5,8 +5,8 @@ import TelegramUIPreferences
 import AccountContext
 
 // ARBIGRAM: raised account limits (upstream: 3 / 4)
-public let maximumNumberOfAccounts = 10
-public let maximumPremiumNumberOfAccounts = 10
+public let maximumNumberOfAccounts = 30
+public let maximumPremiumNumberOfAccounts = 30
 
 public func activeAccountsAndPeers(context: AccountContext, includePrimary: Bool = false) -> Signal<((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]), NoError> {
     let sharedContext = context.sharedContext

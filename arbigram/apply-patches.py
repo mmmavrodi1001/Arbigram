@@ -51,9 +51,9 @@ patch(
     'submodules/AccountUtils/Sources/AccountUtils.swift',
     "public let maximumNumberOfAccounts = 3\npublic let maximumPremiumNumberOfAccounts = 4",
     "// ARBIGRAM: raised account limits (upstream: 3 / 4)\n"
-    "public let maximumNumberOfAccounts = 10\n"
-    "public let maximumPremiumNumberOfAccounts = 10",
-    'account limit -> 10',
+    "public let maximumNumberOfAccounts = 30\n"
+    "public let maximumPremiumNumberOfAccounts = 30",
+    'account limit -> 30',
 )
 
 # ----------------------------------------------------------------- 2. stories
@@ -490,6 +490,186 @@ patch(
     "    // ARBIGRAM: an existing glyph tinted with the fork's own colour, so no new asset is needed\n"
     '    public static let arbigram = renderSettingsIcon(name: "Item List/Icons/Brush", backgroundColors: [UIColor(rgb: 0x8B6DFF), UIColor(rgb: 0x6C4CF1)])',
     'settings: row icon',
+)
+
+# --------------------------------------------------- 12. the other switches
+# Read receipts, typing indicators and copy protection each turned out to have
+# a single choke point, so none of these is a scattering of call sites.
+
+# Upstream gates every place a read is reported - messages, reactions, stories -
+# behind one debug flag, so the switch overlays that flag where it is handed out
+# rather than touching the ten places that read it.
+patch(
+    'submodules/TelegramUI/Sources/SharedAccountContext.swift',
+    'import AccountContext\n',
+    'import AccountContext\nimport ArbigramSettings\n',
+    'switches: shared context import',
+)
+
+patch(
+    'submodules/TelegramUI/Sources/SharedAccountContext.swift',
+    """    public var immediateExperimentalUISettings: ExperimentalUISettings {
+        return self.immediateExperimentalUISettingsValue.with { $0 }
+    }""",
+    """    public var immediateExperimentalUISettings: ExperimentalUISettings {
+        var settings = self.immediateExperimentalUISettingsValue.with { $0 }
+        // ARBIGRAM: read receipts are switchable; upstream reads this flag in
+        // every place a read is reported, so overlaying it here covers them all
+        if ArbigramSettings.shared.skipReadHistory {
+            settings.skipReadHistory = true
+        }
+        return settings
+    }""",
+    'read receipts switchable',
+)
+
+ACCOUNT_PATH = 'submodules/TelegramCore/Sources/Account/Account.swift'
+patch(
+    ACCOUNT_PATH,
+    'import EncryptionProvider',
+    'import EncryptionProvider\nimport ArbigramSettings',
+    'typing: account import',
+)
+
+patch(
+    'submodules/TelegramCore/Sources/State/PeerInputActivity.swift',
+    'public enum PeerInputActivity: Comparable {',
+    """public extension PeerInputActivity {
+    // ARBIGRAM
+    var isArbigramGroupCallSpeaking: Bool {
+        if case .speakingInGroupCall = self {
+            return true
+        }
+        return false
+    }
+}
+
+public enum PeerInputActivity: Comparable {""",
+    'typing: group-call test',
+)
+
+patch(
+    ACCOUNT_PATH,
+    """    public func updateLocalInputActivity(peerId: PeerActivitySpace, activity: PeerInputActivity, isPresent: Bool) {
+        self.localInputActivityManager.transaction { manager in""",
+    """    public func updateLocalInputActivity(peerId: PeerActivitySpace, activity: PeerInputActivity, isPresent: Bool) {
+        // ARBIGRAM: only additions are suppressed, so an activity that started
+        // before the switch was flipped can still be withdrawn. Group-call
+        // speaking drives the call UI rather than a status line, so it stays.
+        if isPresent && ArbigramSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
+            return
+        }
+        self.localInputActivityManager.transaction { manager in""",
+    'typing indicators switchable',
+)
+
+patch(
+    ACCOUNT_PATH,
+    """    public func acquireLocalInputActivity(peerId: PeerActivitySpace, activity: PeerInputActivity) -> Disposable {
+        return self.localInputActivityManager.acquireActivity(chatPeerId: peerId, peerId: self.peerId, activity: activity)
+    }""",
+    """    public func acquireLocalInputActivity(peerId: PeerActivitySpace, activity: PeerInputActivity) -> Disposable {
+        // ARBIGRAM
+        if ArbigramSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
+            return EmptyDisposable
+        }
+        return self.localInputActivityManager.acquireActivity(chatPeerId: peerId, peerId: self.peerId, activity: activity)
+    }""",
+    'recording indicators switchable',
+)
+
+# Text selection and media saving hang off the same flag, which is why one
+# switch covers both.
+patch(
+    'submodules/TelegramCore/Sources/Utils/MessageUtils.swift',
+    'import TelegramApi',
+    'import TelegramApi\nimport ArbigramSettings',
+    'copy protection: message import',
+)
+
+patch(
+    'submodules/TelegramCore/Sources/Utils/MessageUtils.swift',
+    """    func isCopyProtected() -> Bool {
+        if self.flags.contains(.CopyProtected) {""",
+    """    func isCopyProtected() -> Bool {
+        // ARBIGRAM
+        if ArbigramSettings.shared.ignoreCopyProtection {
+            return false
+        }
+        if self.flags.contains(.CopyProtected) {""",
+    'copy protection: per message',
+)
+
+patch(
+    'submodules/TelegramCore/Sources/Utils/PeerUtils.swift',
+    'import Postbox',
+    'import Postbox\nimport ArbigramSettings',
+    'copy protection: peer import',
+)
+
+patch(
+    'submodules/TelegramCore/Sources/Utils/PeerUtils.swift',
+    """    var isCopyProtectionEnabled: Bool {
+        switch self {
+        case let group as TelegramGroup:""",
+    """    var isCopyProtectionEnabled: Bool {
+        // ARBIGRAM: text selection and media saving both hang off this flag
+        if ArbigramSettings.shared.ignoreCopyProtection {
+            return false
+        }
+        switch self {
+        case let group as TelegramGroup:""",
+    'copy protection: per peer',
+)
+
+# ----------------------------------------------------------------- 13. theme
+# An accent preset like any other, so Appearance switches away from it and back.
+patch(
+    'submodules/TelegramUIPreferences/Sources/PresentationThemeSettings.swift',
+    """    public static var defaultSettings: PresentationThemeSettings {
+        return PresentationThemeSettings(theme: .builtin(.dayClassic), themePreferredBaseTheme: [:], themeSpecificAccentColors: [:],""",
+    """    // ARBIGRAM: the fork's violet, matching the app icon. It is an accent
+    // preset like any other, so Appearance switches away from it and back.
+    public static let arbigramAccentColorIndex: Int32 = 108
+
+    public static var arbigramAccentColor: PresentationThemeAccentColor {
+        return PresentationThemeAccentColor(index: PresentationThemeSettings.arbigramAccentColorIndex, baseColor: .preset, accentColor: 0xFF6C4CF1, bubbleColors: [0xFFEDE7FF])
+    }
+
+    public static var defaultSettings: PresentationThemeSettings {
+        return PresentationThemeSettings(theme: .builtin(.dayClassic), themePreferredBaseTheme: [:], themeSpecificAccentColors: [PresentationThemeReference.builtin(.dayClassic).index: PresentationThemeSettings.arbigramAccentColor],""",
+    'theme: violet by default',
+)
+
+PRESETS_PATH = 'submodules/SettingsUI/Sources/Themes/ThemeColorPresets.swift'
+patch(
+    PRESETS_PATH,
+    """var dayClassicColorPresets: [PresentationThemeAccentColor] = [
+    // Pink with Blue""",
+    """var dayClassicColorPresets: [PresentationThemeAccentColor] = [
+    // ARBIGRAM: first in the row, and the one a fresh install starts on
+    PresentationThemeSettings.arbigramAccentColor,
+
+    // Pink with Blue""",
+    'theme: classic preset',
+)
+
+patch(
+    PRESETS_PATH,
+    """var dayColorPresets: [PresentationThemeAccentColor] = [
+    PresentationThemeAccentColor(index: 101,""",
+    """var dayColorPresets: [PresentationThemeAccentColor] = [
+    PresentationThemeAccentColor(index: PresentationThemeSettings.arbigramAccentColorIndex, baseColor: .preset, accentColor: 0x6c4cf1, bubbleColors: [0x8b6dff, 0x6c4cf1]), // ARBIGRAM
+    PresentationThemeAccentColor(index: 101,""",
+    'theme: day preset',
+)
+
+patch(
+    PRESETS_PATH,
+    'var nightColorPresets: [PresentationThemeAccentColor] = [',
+    """var nightColorPresets: [PresentationThemeAccentColor] = [
+    PresentationThemeAccentColor(index: PresentationThemeSettings.arbigramAccentColorIndex, baseColor: .preset, accentColor: 0x8b6dff, bubbleColors: [0x8b6dff, 0x6c4cf1]), // ARBIGRAM""",
+    'theme: night preset',
 )
 
 # ------------------------------------------------------------------- report

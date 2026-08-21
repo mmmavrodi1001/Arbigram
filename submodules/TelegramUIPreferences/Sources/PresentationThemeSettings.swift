@@ -651,8 +651,16 @@ public struct PresentationThemeSettings: Codable {
         return resources
     }
     
+    // ARBIGRAM: the fork's violet, matching the app icon. It is an accent
+    // preset like any other, so Appearance switches away from it and back.
+    public static let arbigramAccentColorIndex: Int32 = 108
+
+    public static var arbigramAccentColor: PresentationThemeAccentColor {
+        return PresentationThemeAccentColor(index: PresentationThemeSettings.arbigramAccentColorIndex, baseColor: .preset, accentColor: 0xFF6C4CF1, bubbleColors: [0xFFEDE7FF])
+    }
+
     public static var defaultSettings: PresentationThemeSettings {
-        return PresentationThemeSettings(theme: .builtin(.dayClassic), themePreferredBaseTheme: [:], themeSpecificAccentColors: [:], themeSpecificChatWallpapers: [:], useSystemFont: true, fontSize: .regular, listsFontSize: .regular, chatBubbleSettings: .default, automaticThemeSwitchSetting: AutomaticThemeSwitchSetting(force: false, trigger: .system, theme: .builtin(.night)), largeEmoji: true, reduceMotion: false)
+        return PresentationThemeSettings(theme: .builtin(.dayClassic), themePreferredBaseTheme: [:], themeSpecificAccentColors: [PresentationThemeReference.builtin(.dayClassic).index: PresentationThemeSettings.arbigramAccentColor], themeSpecificChatWallpapers: [:], useSystemFont: true, fontSize: .regular, listsFontSize: .regular, chatBubbleSettings: .default, automaticThemeSwitchSetting: AutomaticThemeSwitchSetting(force: false, trigger: .system, theme: .builtin(.night)), largeEmoji: true, reduceMotion: false)
     }
     
     public init(theme: PresentationThemeReference, themePreferredBaseTheme: [Int64: TelegramBaseTheme], themeSpecificAccentColors: [Int64: PresentationThemeAccentColor], themeSpecificChatWallpapers: [Int64: TelegramWallpaper], useSystemFont: Bool, fontSize: PresentationFontSize, listsFontSize: PresentationFontSize, chatBubbleSettings: PresentationChatBubbleSettings, automaticThemeSwitchSetting: AutomaticThemeSwitchSetting, largeEmoji: Bool, reduceMotion: Bool) {
