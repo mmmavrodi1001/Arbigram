@@ -26,6 +26,7 @@ public final class ArbigramSettings {
         case skipReadHistory = "arbigram.skipReadHistory"
         case hideInputActivity = "arbigram.hideInputActivity"
         case ignoreCopyProtection = "arbigram.ignoreCopyProtection"
+        case hideContactsTab = "arbigram.hideContactsTab"
 
         /// The first three replaced constants that were compiled in, so they
         /// keep that behaviour. The rest are new and stay out of the way until
@@ -34,7 +35,7 @@ public final class ArbigramSettings {
             switch self {
             case .hideStories, .hideSponsoredMessages, .showPeerId:
                 return true
-            case .skipReadHistory, .hideInputActivity, .ignoreCopyProtection:
+            case .skipReadHistory, .hideInputActivity, .ignoreCopyProtection, .hideContactsTab:
                 return false
             }
         }
@@ -86,6 +87,12 @@ public final class ArbigramSettings {
     public var ignoreCopyProtection: Bool {
         get { return self.defaults.bool(forKey: Key.ignoreCopyProtection.rawValue) }
         set { self.set(.ignoreCopyProtection, newValue) }
+    }
+
+    /// The Contacts tab. Calls already has an upstream switch of its own.
+    public var hideContactsTab: Bool {
+        get { return self.defaults.bool(forKey: Key.hideContactsTab.rawValue) }
+        set { self.set(.hideContactsTab, newValue) }
     }
 
     private func set(_ key: Key, _ value: Bool) {

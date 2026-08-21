@@ -6,6 +6,7 @@ import TelegramCore
 import SwiftSignalKit
 import TelegramPresentationData
 import AccountContext
+import ArbigramSettings
 import ContactListUI
 import CallListUI
 import ChatListUI
@@ -76,6 +77,11 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     public var rootTabController: TabBarController?
     
     public var contactsController: ContactsController?
+
+    // ARBIGRAM: the tab bar is rebuilt on demand rather than observed, so the
+    // last calls-tab value is kept to rebuild it when a switch changes.
+    private var arbigramShowCallsTab: Bool = false
+    private var arbigramSettingsObserver: NSObjectProtocol?
     public var callListController: CallListController?
     public var chatListController: ChatListController?
     public var accountSettingsController: PeerInfoScreen?
@@ -146,6 +152,10 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         self.presentationDataDisposable?.dispose()
         self.applicationInFocusDisposable?.dispose()
         self.storyUploadEventsDisposable?.dispose()
+        // ARBIGRAM
+        if let arbigramSettingsObserver = self.arbigramSettingsObserver {
+            NotificationCenter.default.removeObserver(arbigramSettingsObserver)
+        }
     }
     
     public func getContactsController() -> ViewController? {
@@ -199,6 +209,15 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     }
     
     public func addRootControllers(showCallsTab: Bool) {
+        self.arbigramShowCallsTab = showCallsTab // ARBIGRAM
+        if self.arbigramSettingsObserver == nil {
+            self.arbigramSettingsObserver = NotificationCenter.default.addObserver(forName: ArbigramSettings.changedNotification, object: nil, queue: .main) { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                self.updateRootControllers(showCallsTab: self.arbigramShowCallsTab)
+            }
+        }
         let tabBarController = TabBarControllerImpl(theme: self.presentationData.theme, strings: self.presentationData.strings)
         tabBarController.navigationPresentation = .master
         let chatListController = self.context.sharedContext.makeChatListController(context: self.context, location: .chatList(groupId: .root), controlsHistoryPreload: true, hideNetworkActivityStatus: false, previewing: false, enableDebugActions: !GlobalExperimentalSettings.isAppStoreBuild)
@@ -213,7 +232,9 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         contactsController.switchToChatsController = {  [weak self] in
             self?.openChatsController(activateSearch: false)
         }
-        controllers.append(contactsController)
+        if !ArbigramSettings.shared.hideContactsTab { // ARBIGRAM
+            controllers.append(contactsController)
+        }
         
         if showCallsTab {
             controllers.append(callListController)
@@ -250,11 +271,14 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     }
         
     public func updateRootControllers(showCallsTab: Bool) {
+        self.arbigramShowCallsTab = showCallsTab // ARBIGRAM
         guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
             return
         }
         var controllers: [ViewController] = []
-        controllers.append(self.contactsController!)
+        if !ArbigramSettings.shared.hideContactsTab, let contactsController = self.contactsController { // ARBIGRAM
+            controllers.append(contactsController)
+        }
         if showCallsTab {
             controllers.append(self.callListController!)
         }

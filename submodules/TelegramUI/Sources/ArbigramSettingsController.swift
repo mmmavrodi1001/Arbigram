@@ -22,6 +22,7 @@ private enum ArbigramSettingsSection: Int32 {
     case readReceipts
     case inputActivity
     case copyProtection
+    case contactsTab
 }
 
 private final class ArbigramSettingsArguments {
@@ -39,6 +40,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
     case skipReadHistory
     case hideInputActivity
     case ignoreCopyProtection
+    case hideContactsTab
 
     var section: ArbigramSettingsSection {
         switch self {
@@ -48,6 +50,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .skipReadHistory: return .readReceipts
         case .hideInputActivity: return .inputActivity
         case .ignoreCopyProtection: return .copyProtection
+        case .hideContactsTab: return .contactsTab
         }
     }
 
@@ -65,6 +68,8 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings, "Скрыть «печатает…»", "Hide Typing Status")
         case .ignoreCopyProtection:
             return loc(strings, "Копировать и скачивать везде", "Ignore Copy Protection")
+        case .hideContactsTab:
+            return loc(strings, "Скрыть вкладку «Контакты»", "Hide the Contacts Tab")
         }
     }
 
@@ -94,6 +99,10 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings,
                        "Выделение текста, копирование и сохранение медиа работают в чатах и каналах с запретом на пересылку.",
                        "Text selection, copying and saving media work in chats and channels that forbid forwarding.")
+        case .hideContactsTab:
+            return loc(strings,
+                       "Убирает «Контакты» из нижней панели. Сами контакты остаются — их видно через поиск. Вкладка «Звонки» прячется своим переключателем в Настройках → Звонки.",
+                       "Removes Contacts from the tab bar. The contacts themselves stay and remain reachable through search. The Calls tab has its own switch under Settings, Calls.")
         }
     }
 
@@ -105,6 +114,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .skipReadHistory: return settings.skipReadHistory
         case .hideInputActivity: return settings.hideInputActivity
         case .ignoreCopyProtection: return settings.ignoreCopyProtection
+        case .hideContactsTab: return settings.hideContactsTab
         }
     }
 
@@ -116,6 +126,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .skipReadHistory: ArbigramSettings.shared.skipReadHistory = value
         case .hideInputActivity: ArbigramSettings.shared.hideInputActivity = value
         case .ignoreCopyProtection: ArbigramSettings.shared.ignoreCopyProtection = value
+        case .hideContactsTab: ArbigramSettings.shared.hideContactsTab = value
         }
     }
 }
@@ -166,6 +177,7 @@ private struct ArbigramSettingsState: Equatable {
     var skipReadHistory: Bool
     var hideInputActivity: Bool
     var ignoreCopyProtection: Bool
+    var hideContactsTab: Bool
 
     init() {
         let settings = ArbigramSettings.shared
@@ -175,6 +187,7 @@ private struct ArbigramSettingsState: Equatable {
         self.skipReadHistory = settings.skipReadHistory
         self.hideInputActivity = settings.hideInputActivity
         self.ignoreCopyProtection = settings.ignoreCopyProtection
+        self.hideContactsTab = settings.hideContactsTab
     }
 }
 
