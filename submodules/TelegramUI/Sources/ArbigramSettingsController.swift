@@ -25,15 +25,18 @@ private enum ArbigramSettingsSection: Int32 {
     case copyProtection
     case contactsTab
     case notificationAccounts
+    case accounts
 }
 
 private final class ArbigramSettingsArguments {
     let set: (ArbigramSwitch, Bool) -> Void
     let openNotificationAccounts: () -> Void
+    let openAccounts: () -> Void
 
-    init(set: @escaping (ArbigramSwitch, Bool) -> Void, openNotificationAccounts: @escaping () -> Void) {
+    init(set: @escaping (ArbigramSwitch, Bool) -> Void, openNotificationAccounts: @escaping () -> Void, openAccounts: @escaping () -> Void) {
         self.set = set
         self.openNotificationAccounts = openNotificationAccounts
+        self.openAccounts = openAccounts
     }
 }
 
@@ -140,6 +143,7 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
     case info(ArbigramSwitch)
     case notificationAccounts(Int)
     case notificationAccountsInfo
+    case accounts
 
     var section: ItemListSectionId {
         switch self {
@@ -149,6 +153,8 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return item.section.rawValue
         case .notificationAccounts, .notificationAccountsInfo:
             return ArbigramSettingsSection.notificationAccounts.rawValue
+        case .accounts:
+            return ArbigramSettingsSection.accounts.rawValue
         }
     }
 
@@ -162,6 +168,8 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return 100
         case .notificationAccountsInfo:
             return 101
+        case .accounts:
+            return 102
         }
     }
 
@@ -192,6 +200,10 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return ItemListTextItem(presentationData: presentationData, text: .plain(loc(presentationData.strings,
                 "Выбери, с каких аккаунтов приходят уведомления. Выключенный аккаунт снимает свой токен с сервера — пуши по нему не отправляются вообще, а не прячутся на телефоне.",
                 "Choose which accounts notify you. An account switched off withdraws its token from the server, so nothing is sent for it at all rather than hidden on arrival.")), sectionId: self.section)
+        case .accounts:
+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: loc(presentationData.strings, "Аккаунты", "Accounts"), label: "", sectionId: self.section, style: .blocks, action: {
+                arguments.openAccounts()
+            })
         }
     }
 }
@@ -232,6 +244,8 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
         statePromise.set(ArbigramSettingsState())
     }, openNotificationAccounts: {
         pushControllerImpl?(arbigramNotificationAccountsController(context: context))
+    }, openAccounts: {
+        pushControllerImpl?(arbigramAccountsController(context: context))
     })
 
     let signal = combineLatest(context.sharedContext.presentationData, statePromise.get())
@@ -244,6 +258,7 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
         }
         entries.append(.notificationAccounts(state.mutedAccountCount))
         entries.append(.notificationAccountsInfo)
+        entries.append(.accounts)
 
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),

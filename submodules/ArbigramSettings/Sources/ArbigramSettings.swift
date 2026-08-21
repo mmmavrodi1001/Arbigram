@@ -1,5 +1,42 @@
 import Foundation
 
+/// What the fork remembers about an account beyond what Telegram stores.
+///
+/// Keyed by user id rather than account record id: the record id changes if an
+/// account is removed and added back, the user id does not.
+public struct ArbigramAccountMeta: Codable, Equatable {
+    /// Index into ArbigramAccountMeta.palette; -1 for no colour.
+    public var colorIndex: Int
+    public var pinned: Bool
+    public var tags: [String]
+    public var note: String
+
+    public init(colorIndex: Int = -1, pinned: Bool = false, tags: [String] = [], note: String = "") {
+        self.colorIndex = colorIndex
+        self.pinned = pinned
+        self.tags = tags
+        self.note = note
+    }
+
+    public static let empty = ArbigramAccountMeta()
+
+    /// Distinguishable at a glance at dot size, and readable on both themes.
+    public static let palette: [UInt32] = [
+        0xe8524f,
+        0xf5a623,
+        0xf7d04a,
+        0x4cd964,
+        0x34c8d0,
+        0x4a8cf7,
+        0x8b6dff,
+        0xef5da8,
+    ]
+
+    public var isEmpty: Bool {
+        return self == ArbigramAccountMeta.empty
+    }
+}
+
 /// The fork's own switches.
 ///
 /// These cannot live in TelegramUIPreferences with the rest of the app's
@@ -134,6 +171,59 @@ public final class ArbigramSettings {
             ids.remove(id)
         }
         self.mutedAccountIds = ids
+    }
+
+    private static let accountMetaKey = "arbigram.accountMeta"
+
+    /// Stored as one JSON blob: the shape changes as the fork grows, and a
+    /// single value keeps reads and writes atomic without a schema in defaults.
+    public var accountMeta: [Int64: ArbigramAccountMeta] {
+        get {
+            guard let data = self.defaults.data(forKey: ArbigramSettings.accountMetaKey),
+                  let decoded = try? JSONDecoder().decode([String: ArbigramAccountMeta].self, from: data) else {
+                return [:]
+            }
+            var result: [Int64: ArbigramAccountMeta] = [:]
+            for (key, value) in decoded {
+                if let id = Int64(key) {
+                    result[id] = value
+                }
+            }
+            return result
+        }
+        set {
+            var encodable: [String: ArbigramAccountMeta] = [:]
+            for (id, value) in newValue where !value.isEmpty {
+                encodable["\(id)"] = value
+            }
+            if let data = try? JSONEncoder().encode(encodable) {
+                self.defaults.set(data, forKey: ArbigramSettings.accountMetaKey)
+                NotificationCenter.default.post(name: ArbigramSettings.changedNotification, object: nil)
+            }
+        }
+    }
+
+    public func meta(for id: Int64) -> ArbigramAccountMeta {
+        return self.accountMeta[id] ?? ArbigramAccountMeta.empty
+    }
+
+    public func setMeta(_ meta: ArbigramAccountMeta, for id: Int64) {
+        var all = self.accountMeta
+        all[id] = meta
+        self.accountMeta = all
+    }
+
+    /// Every tag in use, for offering them rather than retyping.
+    public var knownTags: [String] {
+        var seen: Set<String> = []
+        var result: [String] = []
+        for meta in self.accountMeta.values {
+            for tag in meta.tags where !seen.contains(tag.lowercased()) {
+                seen.insert(tag.lowercased())
+                result.append(tag)
+            }
+        }
+        return result.sorted()
     }
 
     private func set(_ key: Key, _ value: Bool) {
