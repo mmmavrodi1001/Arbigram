@@ -7,6 +7,7 @@ import ItemListUI
 import PresentationDataUtils
 import AccountContext
 import ArbigramSettings
+import AccountUtils
 
 /// Two languages, picked from the app's own. New keys cannot go into the
 /// localisation files without regenerating the whole string table, and the fork
@@ -23,13 +24,16 @@ private enum ArbigramSettingsSection: Int32 {
     case inputActivity
     case copyProtection
     case contactsTab
+    case notificationAccounts
 }
 
 private final class ArbigramSettingsArguments {
     let set: (ArbigramSwitch, Bool) -> Void
+    let openNotificationAccounts: () -> Void
 
-    init(set: @escaping (ArbigramSwitch, Bool) -> Void) {
+    init(set: @escaping (ArbigramSwitch, Bool) -> Void, openNotificationAccounts: @escaping () -> Void) {
         self.set = set
+        self.openNotificationAccounts = openNotificationAccounts
     }
 }
 
@@ -134,6 +138,8 @@ private enum ArbigramSwitch: Int32, CaseIterable {
 private enum ArbigramSettingsEntry: ItemListNodeEntry {
     case toggle(ArbigramSwitch, Bool)
     case info(ArbigramSwitch)
+    case notificationAccounts(Int)
+    case notificationAccountsInfo
 
     var section: ItemListSectionId {
         switch self {
@@ -141,6 +147,8 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return item.section.rawValue
         case let .info(item):
             return item.section.rawValue
+        case .notificationAccounts, .notificationAccountsInfo:
+            return ArbigramSettingsSection.notificationAccounts.rawValue
         }
     }
 
@@ -150,6 +158,10 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return item.rawValue * 2
         case let .info(item):
             return item.rawValue * 2 + 1
+        case .notificationAccounts:
+            return 100
+        case .notificationAccountsInfo:
+            return 101
         }
     }
 
@@ -166,6 +178,20 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             })
         case let .info(item):
             return ItemListTextItem(presentationData: presentationData, text: .plain(item.info(presentationData.strings)), sectionId: self.section)
+        case let .notificationAccounts(mutedCount):
+            let label: String
+            if mutedCount == 0 {
+                label = loc(presentationData.strings, "Все", "All")
+            } else {
+                label = loc(presentationData.strings, "Выключено: \(mutedCount)", "\(mutedCount) off")
+            }
+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: loc(presentationData.strings, "Уведомления по аккаунтам", "Notifications by Account"), label: label, sectionId: self.section, style: .blocks, action: {
+                arguments.openNotificationAccounts()
+            })
+        case .notificationAccountsInfo:
+            return ItemListTextItem(presentationData: presentationData, text: .plain(loc(presentationData.strings,
+                "Выбери, с каких аккаунтов приходят уведомления. Выключенный аккаунт снимает свой токен с сервера — пуши по нему не отправляются вообще, а не прячутся на телефоне.",
+                "Choose which accounts notify you. An account switched off withdraws its token from the server, so nothing is sent for it at all rather than hidden on arrival.")), sectionId: self.section)
         }
     }
 }
@@ -178,6 +204,7 @@ private struct ArbigramSettingsState: Equatable {
     var hideInputActivity: Bool
     var ignoreCopyProtection: Bool
     var hideContactsTab: Bool
+    var mutedAccountCount: Int
 
     init() {
         let settings = ArbigramSettings.shared
@@ -188,6 +215,7 @@ private struct ArbigramSettingsState: Equatable {
         self.hideInputActivity = settings.hideInputActivity
         self.ignoreCopyProtection = settings.ignoreCopyProtection
         self.hideContactsTab = settings.hideContactsTab
+        self.mutedAccountCount = settings.mutedAccountIds.count
     }
 }
 
@@ -197,9 +225,13 @@ private struct ArbigramSettingsState: Equatable {
 public func arbigramSettingsController(context: AccountContext) -> ViewController {
     let statePromise = ValuePromise(ArbigramSettingsState(), ignoreRepeated: true)
 
+    var pushControllerImpl: ((ViewController) -> Void)?
+
     let arguments = ArbigramSettingsArguments(set: { item, value in
         item.write(value)
         statePromise.set(ArbigramSettingsState())
+    }, openNotificationAccounts: {
+        pushControllerImpl?(arbigramNotificationAccountsController(context: context))
     })
 
     let signal = combineLatest(context.sharedContext.presentationData, statePromise.get())
@@ -210,10 +242,115 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
             entries.append(.toggle(item, item.value(state)))
             entries.append(.info(item))
         }
+        entries.append(.notificationAccounts(state.mutedAccountCount))
+        entries.append(.notificationAccountsInfo)
 
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
             title: .text("Arbigram"),
+            leftNavigationButton: nil,
+            rightNavigationButton: nil,
+            backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)
+        )
+        let listState = ItemListNodeState(
+            presentationData: ItemListPresentationData(presentationData),
+            entries: entries,
+            style: .blocks
+        )
+        return (controllerState, (listState, arguments))
+    }
+
+    let controller = ItemListController(context: context, state: signal)
+    // The count on the row is read from the store, so coming back from the
+    // account list has to re-read it.
+    controller.didAppear = { _ in
+        statePromise.set(ArbigramSettingsState())
+    }
+    pushControllerImpl = { [weak controller] c in
+        controller?.push(c)
+    }
+    return controller
+}
+
+// MARK: - Notifications by account
+
+private final class ArbigramNotificationAccountsArguments {
+    let setMuted: (Int64, Bool) -> Void
+
+    init(setMuted: @escaping (Int64, Bool) -> Void) {
+        self.setMuted = setMuted
+    }
+}
+
+private struct ArbigramAccountRow: Equatable {
+    let id: Int64
+    let title: String
+    let enabled: Bool
+}
+
+private enum ArbigramNotificationAccountsEntry: ItemListNodeEntry {
+    case account(Int, ArbigramAccountRow)
+    case info
+
+    var section: ItemListSectionId {
+        return 0
+    }
+
+    var stableId: Int32 {
+        switch self {
+        case let .account(index, _):
+            return Int32(index)
+        case .info:
+            return 10000
+        }
+    }
+
+    static func <(lhs: ArbigramNotificationAccountsEntry, rhs: ArbigramNotificationAccountsEntry) -> Bool {
+        return lhs.stableId < rhs.stableId
+    }
+
+    func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
+        let arguments = arguments as! ArbigramNotificationAccountsArguments
+        switch self {
+        case let .account(_, row):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: row.title, value: row.enabled, maximumNumberOfLines: 2, sectionId: self.section, style: .blocks, updated: { value in
+                arguments.setMuted(row.id, !value)
+            })
+        case .info:
+            return ItemListTextItem(presentationData: presentationData, text: .plain(loc(presentationData.strings,
+                "Выключенный аккаунт снимает свой push-токен с сервера, так что уведомления по нему не отправляются вообще. Сообщения при этом приходят как обычно — их видно, когда откроешь приложение.",
+                "An account switched off withdraws its push token from the server, so nothing is sent for it at all. Messages still arrive as usual and are there when the app is opened.")), sectionId: self.section)
+        }
+    }
+}
+
+public func arbigramNotificationAccountsController(context: AccountContext) -> ViewController {
+    let mutedPromise = ValuePromise(ArbigramSettings.shared.mutedAccountIds, ignoreRepeated: true)
+
+    let arguments = ArbigramNotificationAccountsArguments(setMuted: { id, muted in
+        ArbigramSettings.shared.setAccount(id, muted: muted)
+        mutedPromise.set(ArbigramSettings.shared.mutedAccountIds)
+    })
+
+    let signal = combineLatest(
+        context.sharedContext.presentationData,
+        activeAccountsAndPeers(context: context, includePrimary: true),
+        mutedPromise.get()
+    )
+    |> deliverOnMainQueue
+    |> map { presentationData, accountsAndPeers, mutedAccountIds -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        var entries: [ArbigramNotificationAccountsEntry] = []
+        for (index, item) in accountsAndPeers.1.enumerated() {
+            let (accountContext, peer, _) = item
+            let id = accountContext.account.peerId.id._internalGetInt64Value()
+            let title = peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
+            entries.append(.account(index, ArbigramAccountRow(id: id, title: title, enabled: !mutedAccountIds.contains(id))))
+        }
+        entries.append(.info)
+
+        let controllerState = ItemListControllerState(
+            presentationData: ItemListPresentationData(presentationData),
+            title: .text(loc(presentationData.strings, "Уведомления по аккаунтам", "Notifications by Account")),
             leftNavigationButton: nil,
             rightNavigationButton: nil,
             backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)

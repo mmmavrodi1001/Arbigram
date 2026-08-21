@@ -1671,16 +1671,36 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         sandbox = false
         #endif
         
-        let settings = self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings])
-        |> map { sharedData -> (allAccounts: Bool, includeMuted: Bool) in
+        // ARBIGRAM: the muted set is not a signal of its own — the store is
+        // readable from TelegramCore and so carries no SwiftSignalKit — so it is
+        // wrapped into one here off the change notification.
+        let arbigramMutedAccountIds: Signal<Set<Int64>, NoError> = Signal { subscriber in
+            subscriber.putNext(ArbigramSettings.shared.mutedAccountIds)
+            let observer = NotificationCenter.default.addObserver(forName: ArbigramSettings.changedNotification, object: nil, queue: .main) { _ in
+                subscriber.putNext(ArbigramSettings.shared.mutedAccountIds)
+            }
+            return ActionDisposable {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+        |> distinctUntilChanged
+
+        let settings = combineLatest(
+            self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings]),
+            arbigramMutedAccountIds
+        )
+        |> map { sharedData, mutedAccountIds -> (allAccounts: Bool, includeMuted: Bool, arbigramMutedAccountIds: Set<Int64>) in
             let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? InAppNotificationSettings.defaultSettings
-            return (settings.displayNotificationsFromAllAccounts, false)
+            return (settings.displayNotificationsFromAllAccounts, false, mutedAccountIds)
         }
         |> distinctUntilChanged(isEqual: { lhs, rhs in
             if lhs.allAccounts != rhs.allAccounts {
                 return false
             }
             if lhs.includeMuted != rhs.includeMuted {
+                return false
+            }
+            if lhs.arbigramMutedAccountIds != rhs.arbigramMutedAccountIds {
                 return false
             }
             return true
@@ -1716,6 +1736,14 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                     activeProductionUserIds = []
                     activeTestingUserIds = []
                 }
+            }
+
+            // ARBIGRAM: an account left out here has its token unregistered
+            // below, so the server stops sending for it entirely rather than the
+            // app hiding what arrives.
+            if !settings.arbigramMutedAccountIds.isEmpty {
+                activeProductionUserIds = activeProductionUserIds.filter { !settings.arbigramMutedAccountIds.contains($0._internalGetInt64Value()) }
+                activeTestingUserIds = activeTestingUserIds.filter { !settings.arbigramMutedAccountIds.contains($0._internalGetInt64Value()) }
             }
             
             for (_, account, _) in activeAccounts {

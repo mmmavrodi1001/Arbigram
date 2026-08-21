@@ -844,6 +844,88 @@ patch(
     'contacts tab: hidden on update',
 )
 
+# ------------------------------------------------- 15. notifications by account
+# Upstream offers all accounts or only the active one. Leaving an account out of
+# the id lists below unregisters its push token, so the server stops sending for
+# it rather than the app hiding what arrives.
+SHARED_CONTEXT = 'submodules/TelegramUI/Sources/SharedAccountContext.swift'
+patch(
+    SHARED_CONTEXT,
+    """        let settings = self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings])
+        |> map { sharedData -> (allAccounts: Bool, includeMuted: Bool) in
+            let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? InAppNotificationSettings.defaultSettings
+            return (settings.displayNotificationsFromAllAccounts, false)
+        }""",
+    """        // ARBIGRAM: the muted set is not a signal of its own — the store is
+        // readable from TelegramCore and so carries no SwiftSignalKit — so it is
+        // wrapped into one here off the change notification.
+        let arbigramMutedAccountIds: Signal<Set<Int64>, NoError> = Signal { subscriber in
+            subscriber.putNext(ArbigramSettings.shared.mutedAccountIds)
+            let observer = NotificationCenter.default.addObserver(forName: ArbigramSettings.changedNotification, object: nil, queue: .main) { _ in
+                subscriber.putNext(ArbigramSettings.shared.mutedAccountIds)
+            }
+            return ActionDisposable {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+        |> distinctUntilChanged
+
+        let settings = combineLatest(
+            self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings]),
+            arbigramMutedAccountIds
+        )
+        |> map { sharedData, mutedAccountIds -> (allAccounts: Bool, includeMuted: Bool, arbigramMutedAccountIds: Set<Int64>) in
+            let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? InAppNotificationSettings.defaultSettings
+            return (settings.displayNotificationsFromAllAccounts, false, mutedAccountIds)
+        }""",
+    'notifications: muted set as a signal',
+)
+
+patch(
+    SHARED_CONTEXT,
+    """            if lhs.includeMuted != rhs.includeMuted {
+                return false
+            }
+            return true
+        })""",
+    """            if lhs.includeMuted != rhs.includeMuted {
+                return false
+            }
+            if lhs.arbigramMutedAccountIds != rhs.arbigramMutedAccountIds {
+                return false
+            }
+            return true
+        })""",
+    'notifications: muted set re-registers',
+)
+
+patch(
+    SHARED_CONTEXT,
+    """                } else {
+                    activeProductionUserIds = []
+                    activeTestingUserIds = []
+                }
+            }
+            
+            for (_, account, _) in activeAccounts {""",
+    """                } else {
+                    activeProductionUserIds = []
+                    activeTestingUserIds = []
+                }
+            }
+
+            // ARBIGRAM: an account left out here has its token unregistered
+            // below, so the server stops sending for it entirely rather than the
+            // app hiding what arrives.
+            if !settings.arbigramMutedAccountIds.isEmpty {
+                activeProductionUserIds = activeProductionUserIds.filter { !settings.arbigramMutedAccountIds.contains($0._internalGetInt64Value()) }
+                activeTestingUserIds = activeTestingUserIds.filter { !settings.arbigramMutedAccountIds.contains($0._internalGetInt64Value()) }
+            }
+            
+            for (_, account, _) in activeAccounts {""",
+    'notifications: muted accounts dropped',
+)
+
 # ------------------------------------------------------------------- report
 for label, detail in APPLIED:
     print('  ok   %-38s %s' % (label, detail))

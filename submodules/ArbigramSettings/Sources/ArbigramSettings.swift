@@ -104,6 +104,38 @@ public final class ArbigramSettings {
         set { self.set(.didApplyTheme, newValue) }
     }
 
+    /// Accounts whose push token is withdrawn, by user id.
+    ///
+    /// Not a Bool, so it sits outside the Key enum. Upstream offers all accounts
+    /// or only the active one; this is the middle the multi-account case wants.
+    private static let mutedAccountsKey = "arbigram.mutedAccountIds"
+
+    public var mutedAccountIds: Set<Int64> {
+        get {
+            let stored = self.defaults.array(forKey: ArbigramSettings.mutedAccountsKey) as? [NSNumber] ?? []
+            return Set(stored.map { $0.int64Value })
+        }
+        set {
+            let stored = newValue.sorted().map { NSNumber(value: $0) }
+            self.defaults.set(stored, forKey: ArbigramSettings.mutedAccountsKey)
+            NotificationCenter.default.post(name: ArbigramSettings.changedNotification, object: nil)
+        }
+    }
+
+    public func isAccountMuted(_ id: Int64) -> Bool {
+        return self.mutedAccountIds.contains(id)
+    }
+
+    public func setAccount(_ id: Int64, muted: Bool) {
+        var ids = self.mutedAccountIds
+        if muted {
+            ids.insert(id)
+        } else {
+            ids.remove(id)
+        }
+        self.mutedAccountIds = ids
+    }
+
     private func set(_ key: Key, _ value: Bool) {
         if self.defaults.bool(forKey: key.rawValue) == value {
             return
