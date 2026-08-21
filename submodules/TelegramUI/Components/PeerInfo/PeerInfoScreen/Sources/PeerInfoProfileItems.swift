@@ -17,6 +17,7 @@ import AvatarNode
 import PeerNameColorItem
 import BoostLevelIconComponent
 import UndoUI // ARBIGRAM
+import ArbigramSettings // ARBIGRAM
 
 private let enabledPublicBioEntities: EnabledEntityTypes = [.allUrl, .mention, .hashtag]
 private let enabledPrivateBioEntities: EnabledEntityTypes = [.internalUrl, .mention, .hashtag]
@@ -175,7 +176,7 @@ func infoItems(
         }
 
         // ARBIGRAM: numeric peer id, tap to copy
-        do {
+        if ArbigramSettings.shared.showPeerId {
             let arbigramPeerIdText = "\(user.id.id._internalGetInt64Value())"
             items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(
                 id: ItemArbigramPeerId,
@@ -585,7 +586,7 @@ func infoItems(
         let ItemArbigramPeerId = 13 // ARBIGRAM
 
         // ARBIGRAM: numeric peer id, tap to copy
-        do {
+        if ArbigramSettings.shared.showPeerId {
             let arbigramPeerIdText = "\(channel.id.id._internalGetInt64Value())"
             items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(
                 id: ItemArbigramPeerId,

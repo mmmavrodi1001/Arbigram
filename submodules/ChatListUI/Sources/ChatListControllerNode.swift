@@ -8,6 +8,7 @@ import TelegramPresentationData
 import MergeLists
 import ActivityIndicator
 import AccountContext
+import ArbigramSettings // ARBIGRAM
 import SearchBarNode
 import SearchUI
 import ContextUI
@@ -1144,6 +1145,10 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
     var navigationBar: NavigationBar?
     let navigationBarView = ComponentView<Empty>()
     weak var controller: ChatListControllerImpl?
+
+    // ARBIGRAM: the header is decided during layout rather than from a
+    // subscription, so flipping the stories switch has to ask for a new pass.
+    private var arbigramSettingsObserver: NSObjectProtocol?
     
     private var toolbar: ComponentView<Empty>?
     var toolbarData: Toolbar?
@@ -1186,6 +1191,13 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
     
     let debugListView = ListViewImpl()
     
+    // ARBIGRAM
+    deinit {
+        if let arbigramSettingsObserver = self.arbigramSettingsObserver {
+            NotificationCenter.default.removeObserver(arbigramSettingsObserver)
+        }
+    }
+    
     init(context: AccountContext, location: ChatListControllerLocation, previewing: Bool, controlsHistoryPreload: Bool, presentationData: PresentationData, animationCache: AnimationCache, animationRenderer: MultiAnimationRenderer, controller: ChatListControllerImpl) {
         self.context = context
         self.location = location
@@ -1210,6 +1222,10 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         self.controller = controller
         
         super.init()
+        
+        self.arbigramSettingsObserver = NotificationCenter.default.addObserver(forName: ArbigramSettings.changedNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.controller?.requestLayout(transition: .immediate)
+        }
         
         self.setViewBlock({
             return UITracingLayerView()
@@ -2459,6 +2475,17 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
 }
 
 func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscriptions, isHidden: Bool) -> Bool {
-    // ARBIGRAM: stories strip removed from the chat list header
+    // ARBIGRAM: switchable; with the switch off upstream's own rules decide
+    if ArbigramSettings.shared.hideStories {
+        return false
+    }
+    if !storySubscriptions.items.isEmpty {
+        return true
+    }
+    if !isHidden, let accountItem = storySubscriptions.accountItem {
+        if accountItem.hasPending || accountItem.storyCount != 0 {
+            return true
+        }
+    }
     return false
 }

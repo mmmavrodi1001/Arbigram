@@ -244,6 +244,11 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
         interaction.openSettings(.powerSaving)
     }))
     
+    // ARBIGRAM: the fork's own switches
+    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: "Arbigram", icon: PresentationResourcesSettings.arbigram, action: {
+        interaction.openSettings(.arbigram)
+    }))
+    
     let languageName = presentationData.strings.primaryComponent.localizedName
     items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 4, label: .text(languageName.isEmpty ? presentationData.strings.Localization_LanguageName : languageName), text: presentationData.strings.Settings_AppLanguage, icon: PresentationResourcesSettings.language, action: {
         interaction.openSettings(.language)

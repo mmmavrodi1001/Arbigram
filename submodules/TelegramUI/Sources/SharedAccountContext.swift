@@ -2842,6 +2842,11 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         return PremiumIntroScreen(context: context, mode: .business, source: .settings, modal: false, forceDark: false)
     }
     
+    // ARBIGRAM
+    public func makeArbigramSettingsScreen(context: AccountContext) -> ViewController {
+        return arbigramSettingsController(context: context)
+    }
+    
     public func makeChatbotSetupScreen(context: AccountContext, initialData: ChatbotSetupScreenInitialData) -> ViewController {
         return ChatbotSetupScreen(context: context, initialData: initialData as! ChatbotSetupScreen.InitialData)
     }

@@ -129,6 +129,8 @@ public struct PresentationResourcesSettings {
     public static let appearance = renderSettingsIcon(name: "Item List/Icons/Appearance", backgroundColors: [colorLightBlue])
     public static let language = renderSettingsIcon(name: "Item List/Icons/Language", backgroundColors: [colorPurple])
     public static let powerSaving = renderSettingsIcon(name: "Item List/Icons/PowerSaving", backgroundColors: [colorOrange])
+    // ARBIGRAM: an existing glyph tinted with the fork's own colour, so no new asset is needed
+    public static let arbigram = renderSettingsIcon(name: "Item List/Icons/Brush", backgroundColors: [UIColor(rgb: 0x8B6DFF), UIColor(rgb: 0x6C4CF1)])
     public static let business = renderSettingsIcon(name: "Item List/Icons/Business", backgroundColors: [UIColor(rgb: 0xA95CE3), UIColor(rgb: 0xF16B80)])
     public static let myProfile = renderSettingsIcon(name: "Item List/Icons/Profile", backgroundColors: [colorRed])
     
