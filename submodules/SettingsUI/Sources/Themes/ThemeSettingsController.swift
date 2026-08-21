@@ -1127,10 +1127,15 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
         }
         
         var defaultThemes: [PresentationThemeReference] = []
+        // ARBIGRAM: the fork's own themes, listed alongside the builtin ones.
+        // Without this a local theme only appears while it is the active one.
         if presentationData.autoNightModeTriggered {
+            defaultThemes.append(ArbigramTheme.midnight.reference)
             defaultThemes.append(contentsOf: [.builtin(.nightAccent), .builtin(.night)])
         } else {
             defaultThemes.append(contentsOf: [
+                ArbigramTheme.violet.reference,
+                ArbigramTheme.midnight.reference,
                 .builtin(.dayClassic),
                 .builtin(.nightAccent),
                 .builtin(.day),

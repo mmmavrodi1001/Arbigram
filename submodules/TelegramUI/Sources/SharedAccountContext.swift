@@ -522,10 +522,21 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }
         })
         
-        // ARBIGRAM: hand over the fork's look once. defaultSettings would only
-        // reach a fresh install, and an update installs over existing settings,
-        // so the theme has to be applied rather than defaulted. After this it
-        // belongs to Appearance and is never forced again.
+        // ARBIGRAM: the fork's themes are local themes, and a local theme is
+        // read back out of the media box by its resource, so both have to be
+        // written there before anything can select one. Rewritten on every
+        // launch rather than once, so an edited definition ships with a build
+        // instead of being stuck behind a first-run flag.
+        for arbigramTheme in ArbigramTheme.allCases {
+            if let data = arbigramTheme.encoded() {
+                self.accountManager.mediaBox.storeResourceData(arbigramTheme.resource.id, data: data, synchronous: true)
+            }
+        }
+
+        // Selecting one, on the other hand, happens once. defaultSettings would
+        // only reach a fresh install, and an update installs over settings that
+        // already exist. After this the theme belongs to Appearance and is
+        // never forced again.
         if !ArbigramSettings.shared.didApplyTheme {
             ArbigramSettings.shared.didApplyTheme = true
             let _ = updatePresentationThemeSettingsInteractively(accountManager: self.accountManager, { current in
@@ -536,9 +547,11 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 accentColors[PresentationThemeReference.builtin(.night).index] = arbigramAccentColor(dark: true)
                 accentColors[PresentationThemeReference.builtin(.nightAccent).index] = arbigramAccentColor(dark: true)
                 current.themeSpecificAccentColors = accentColors
-                // A wallpaper already chosen for a theme wins over the accent's
+                // A wallpaper already chosen for a theme wins over the theme's
                 // own, which would leave the new look half-applied.
                 current.themeSpecificChatWallpapers = [:]
+                current.theme = ArbigramTheme.violet.reference
+                current.automaticThemeSwitchSetting = AutomaticThemeSwitchSetting(force: current.automaticThemeSwitchSetting.force, trigger: current.automaticThemeSwitchSetting.trigger, theme: ArbigramTheme.midnight.reference)
                 return current
             }).start()
         }

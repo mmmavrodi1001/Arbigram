@@ -664,10 +664,21 @@ patch(
     """        let immediateExperimentalUISettingsValue = self.immediateExperimentalUISettingsValue
         let _ = immediateExperimentalUISettingsValue.swap(initialPresentationDataAndSettings.experimentalUISettings)
 """,
-    """        // ARBIGRAM: hand over the fork's look once. defaultSettings would only
-        // reach a fresh install, and an update installs over existing settings,
-        // so the theme has to be applied rather than defaulted. After this it
-        // belongs to Appearance and is never forced again.
+    """        // ARBIGRAM: the fork's themes are local themes, and a local theme is
+        // read back out of the media box by its resource, so both have to be
+        // written there before anything can select one. Rewritten on every
+        // launch rather than once, so an edited definition ships with a build
+        // instead of being stuck behind a first-run flag.
+        for arbigramTheme in ArbigramTheme.allCases {
+            if let data = arbigramTheme.encoded() {
+                self.accountManager.mediaBox.storeResourceData(arbigramTheme.resource.id, data: data, synchronous: true)
+            }
+        }
+
+        // Selecting one, on the other hand, happens once. defaultSettings would
+        // only reach a fresh install, and an update installs over settings that
+        // already exist. After this the theme belongs to Appearance and is
+        // never forced again.
         if !ArbigramSettings.shared.didApplyTheme {
             ArbigramSettings.shared.didApplyTheme = true
             let _ = updatePresentationThemeSettingsInteractively(accountManager: self.accountManager, { current in
@@ -678,9 +689,11 @@ patch(
                 accentColors[PresentationThemeReference.builtin(.night).index] = arbigramAccentColor(dark: true)
                 accentColors[PresentationThemeReference.builtin(.nightAccent).index] = arbigramAccentColor(dark: true)
                 current.themeSpecificAccentColors = accentColors
-                // A wallpaper already chosen for a theme wins over the accent's
+                // A wallpaper already chosen for a theme wins over the theme's
                 // own, which would leave the new look half-applied.
                 current.themeSpecificChatWallpapers = [:]
+                current.theme = ArbigramTheme.violet.reference
+                current.automaticThemeSwitchSetting = AutomaticThemeSwitchSetting(force: current.automaticThemeSwitchSetting.force, trigger: current.automaticThemeSwitchSetting.trigger, theme: ArbigramTheme.midnight.reference)
                 return current
             }).start()
         }
@@ -690,6 +703,50 @@ patch(
 """,
     'theme: applied once on update',
 )
+
+
+
+# The two themes are local themes, listed next to the builtin ones. Without this
+# a local theme only shows up in Appearance while it is the active one.
+THEME_LIST_OLD = """        var defaultThemes: [PresentationThemeReference] = []
+        if presentationData.autoNightModeTriggered {
+            defaultThemes.append(contentsOf: [.builtin(.nightAccent), .builtin(.night)])
+        } else {
+            defaultThemes.append(contentsOf: [
+                .builtin(.dayClassic),
+                .builtin(.nightAccent),
+                .builtin(.day),
+                .builtin(.night)
+            ])
+        }"""
+
+THEME_LIST_NEW = """        var defaultThemes: [PresentationThemeReference] = []
+        // ARBIGRAM: the fork's own themes, listed alongside the builtin ones.
+        // Without this a local theme only appears while it is the active one.
+        if presentationData.autoNightModeTriggered {
+            defaultThemes.append(ArbigramTheme.midnight.reference)
+            defaultThemes.append(contentsOf: [.builtin(.nightAccent), .builtin(.night)])
+        } else {
+            defaultThemes.append(contentsOf: [
+                ArbigramTheme.violet.reference,
+                ArbigramTheme.midnight.reference,
+                .builtin(.dayClassic),
+                .builtin(.nightAccent),
+                .builtin(.day),
+                .builtin(.night)
+            ])
+        }"""
+
+for theme_list_file in [
+    'submodules/SettingsUI/Sources/ThemePickerController.swift',
+    'submodules/SettingsUI/Sources/Themes/ThemeSettingsController.swift',
+]:
+    patch(
+        theme_list_file,
+        THEME_LIST_OLD,
+        THEME_LIST_NEW,
+        'theme: listed in %s' % theme_list_file.split('/')[-1].replace('.swift', ''),
+    )
 
 # ---------------------------------------------------------- 14. contacts tab
 # Calls already has an upstream switch. The tab bar is rebuilt on demand rather
