@@ -10,12 +10,25 @@ public struct ArbigramAccountMeta: Codable, Equatable {
     public var pinned: Bool
     public var tags: [String]
     public var note: String
+    /// Absent from every list until the phrase is typed. Decoded with a default
+    /// so metadata written before this existed still reads.
+    public var hidden: Bool
 
-    public init(colorIndex: Int = -1, pinned: Bool = false, tags: [String] = [], note: String = "") {
+    public init(colorIndex: Int = -1, pinned: Bool = false, tags: [String] = [], note: String = "", hidden: Bool = false) {
         self.colorIndex = colorIndex
         self.pinned = pinned
         self.tags = tags
         self.note = note
+        self.hidden = hidden
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.colorIndex = try container.decodeIfPresent(Int.self, forKey: .colorIndex) ?? -1
+        self.pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
+        self.tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        self.note = try container.decodeIfPresent(String.self, forKey: .note) ?? ""
+        self.hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
     }
 
     public static let empty = ArbigramAccountMeta()
@@ -174,6 +187,45 @@ public final class ArbigramSettings {
     }
 
     private static let accountMetaKey = "arbigram.accountMeta"
+    private static let secretPhraseKey = "arbigram.secretPhrase"
+
+    /// Deliberately not persisted: closing the app hides everything again, so
+    /// forgetting to switch it off is not a way to leak anything.
+    private var hiddenRevealedValue = false
+
+    public var hiddenRevealed: Bool {
+        return self.hiddenRevealedValue
+    }
+
+    /// The phrase that toggles hidden accounts. Empty means the feature is off.
+    public var secretPhrase: String {
+        get { return self.defaults.string(forKey: ArbigramSettings.secretPhraseKey) ?? "" }
+        set {
+            // No notification: the phrase changes nothing that is on screen, and
+            // this setter runs on every keystroke.
+            self.defaults.set(newValue, forKey: ArbigramSettings.secretPhraseKey)
+        }
+    }
+
+    public var hasHiddenAccounts: Bool {
+        return self.accountMeta.values.contains(where: { $0.hidden })
+    }
+
+    /// Called with whatever was typed into chat search. Returns true when the
+    /// text was the phrase, in which case it is swallowed and never searched
+    /// for — the point is that nothing on screen reacts.
+    public func consumeSecretPhrase(_ text: String) -> Bool {
+        let phrase = self.secretPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        if phrase.isEmpty {
+            return false
+        }
+        if text.trimmingCharacters(in: .whitespacesAndNewlines).compare(phrase, options: .caseInsensitive) != .orderedSame {
+            return false
+        }
+        self.hiddenRevealedValue = !self.hiddenRevealedValue
+        NotificationCenter.default.post(name: ArbigramSettings.changedNotification, object: nil)
+        return true
+    }
 
     /// Stored as one JSON blob: the shape changes as the fork grows, and a
     /// single value keeps reads and writes atomic without a schema in defaults.
@@ -198,7 +250,6 @@ public final class ArbigramSettings {
             }
             if let data = try? JSONEncoder().encode(encodable) {
                 self.defaults.set(data, forKey: ArbigramSettings.accountMetaKey)
-                NotificationCenter.default.post(name: ArbigramSettings.changedNotification, object: nil)
             }
         }
     }
@@ -209,8 +260,14 @@ public final class ArbigramSettings {
 
     public func setMeta(_ meta: ArbigramAccountMeta, for id: Int64) {
         var all = self.accountMeta
+        let previous = all[id] ?? ArbigramAccountMeta.empty
         all[id] = meta
         self.accountMeta = all
+        // Only hiding changes what other screens show, and these setters run on
+        // every keystroke of the note and tag fields — so the rest stays quiet.
+        if previous.hidden != meta.hidden {
+            NotificationCenter.default.post(name: ArbigramSettings.changedNotification, object: nil)
+        }
     }
 
     /// Every tag in use, for offering them rather than retyping.

@@ -8,6 +8,7 @@ import TelegramPresentationData
 import TelegramUIPreferences
 import MergeLists
 import AccountContext
+import ArbigramSettings
 import SearchUI
 import ContactsPeerItem
 import ChatListSearchItemHeader
@@ -710,6 +711,13 @@ public final class ChatListSearchContainerNode: SearchDisplayControllerContentNo
     }
     
     override public func searchTextUpdated(text: String) {
+        // ARBIGRAM: the phrase toggles hidden accounts and is swallowed here.
+        // Nothing on screen reacts to it — that is the whole point, since a
+        // visible reaction would announce that something is hidden.
+        if ArbigramSettings.shared.consumeSecretPhrase(text) {
+            return
+        }
+
         let searchQuery: String? = !text.isEmpty ? text : nil
 
         if !text.hasPrefix("#") && self.paneContainerNode.currentPaneKey == .publicPosts {

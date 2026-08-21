@@ -362,6 +362,7 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
 
 private enum ArbigramAccountDetailSection: Int32 {
     case pinned
+    case hidden
     case color
     case tags
     case note
@@ -369,12 +370,14 @@ private enum ArbigramAccountDetailSection: Int32 {
 
 private final class ArbigramAccountDetailArguments {
     let setPinned: (Bool) -> Void
+    let setHidden: (Bool) -> Void
     let setColor: (Int) -> Void
     let setTags: (String) -> Void
     let setNote: (String) -> Void
 
-    init(setPinned: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, setTags: @escaping (String) -> Void, setNote: @escaping (String) -> Void) {
+    init(setPinned: @escaping (Bool) -> Void, setHidden: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, setTags: @escaping (String) -> Void, setNote: @escaping (String) -> Void) {
         self.setPinned = setPinned
+        self.setHidden = setHidden
         self.setColor = setColor
         self.setTags = setTags
         self.setNote = setNote
@@ -383,6 +386,8 @@ private final class ArbigramAccountDetailArguments {
 
 private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
     case pinned(String, Bool)
+    case hidden(String, Bool)
+    case hiddenInfo(String)
     case colorHeader(String)
     case color(Int, String, Bool)
     case tagsHeader(String)
@@ -395,6 +400,8 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
         switch self {
         case .pinned:
             return ArbigramAccountDetailSection.pinned.rawValue
+        case .hidden, .hiddenInfo:
+            return ArbigramAccountDetailSection.hidden.rawValue
         case .colorHeader, .color:
             return ArbigramAccountDetailSection.color.rawValue
         case .tagsHeader, .tags, .tagsInfo:
@@ -408,8 +415,12 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
         switch self {
         case .pinned:
             return 0
+        case .hidden:
+            return 2
+        case .hiddenInfo:
+            return 3
         case .colorHeader:
-            return 1
+            return 4
         case let .color(index, _, _):
             return Int32(10 + index)
         case .tagsHeader:
@@ -436,6 +447,12 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: self.section, style: .blocks, updated: { value in
                 arguments.setPinned(value)
             })
+        case let .hidden(title, value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, maximumNumberOfLines: 2, sectionId: self.section, style: .blocks, updated: { value in
+                arguments.setHidden(value)
+            })
+        case let .hiddenInfo(text):
+            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         case let .colorHeader(text), let .tagsHeader(text), let .noteHeader(text):
             return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
         case let .color(index, title, selected):
@@ -476,6 +493,8 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
 
     let arguments = ArbigramAccountDetailArguments(setPinned: { value in
         updateState { $0.meta.pinned = value }
+    }, setHidden: { value in
+        updateState { $0.meta.hidden = value }
     }, setColor: { index in
         updateState { state in
             // Tapping the current colour clears it, so there is no separate
@@ -502,6 +521,12 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
         let isRussian = presentationData.strings.baseLanguageCode.hasPrefix("ru")
         var entries: [ArbigramAccountDetailEntry] = []
         entries.append(.pinned(isRussian ? "Закрепить наверху" : "Pin to the top", state.meta.pinned))
+        if !ArbigramSettings.shared.secretPhrase.isEmpty {
+            entries.append(.hidden(isRussian ? "Скрыть аккаунт" : "Hide this account", state.meta.hidden))
+            entries.append(.hiddenInfo(isRussian
+                ? "Аккаунт пропадёт из всех списков. Вернуть — ввести свою фразу в поиск чатов; при следующем запуске он снова скроется."
+                : "The account disappears from every list. Type your phrase into chat search to bring it back; the next launch hides it again."))
+        }
         entries.append(.colorHeader(isRussian ? "ЦВЕТ" : "COLOUR"))
         for index in 0 ..< ArbigramAccountMeta.palette.count {
             let name = isRussian ? colorNamesRu[index] : colorNamesEn[index]

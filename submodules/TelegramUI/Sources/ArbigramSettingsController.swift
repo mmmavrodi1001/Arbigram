@@ -26,17 +26,20 @@ private enum ArbigramSettingsSection: Int32 {
     case contactsTab
     case notificationAccounts
     case accounts
+    case secretPhrase
 }
 
 private final class ArbigramSettingsArguments {
     let set: (ArbigramSwitch, Bool) -> Void
     let openNotificationAccounts: () -> Void
     let openAccounts: () -> Void
+    let setSecretPhrase: (String) -> Void
 
-    init(set: @escaping (ArbigramSwitch, Bool) -> Void, openNotificationAccounts: @escaping () -> Void, openAccounts: @escaping () -> Void) {
+    init(set: @escaping (ArbigramSwitch, Bool) -> Void, openNotificationAccounts: @escaping () -> Void, openAccounts: @escaping () -> Void, setSecretPhrase: @escaping (String) -> Void) {
         self.set = set
         self.openNotificationAccounts = openNotificationAccounts
         self.openAccounts = openAccounts
+        self.setSecretPhrase = setSecretPhrase
     }
 }
 
@@ -144,6 +147,8 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
     case notificationAccounts(Int)
     case notificationAccountsInfo
     case accounts
+    case secretPhrase(String)
+    case secretPhraseInfo
 
     var section: ItemListSectionId {
         switch self {
@@ -155,6 +160,8 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return ArbigramSettingsSection.notificationAccounts.rawValue
         case .accounts:
             return ArbigramSettingsSection.accounts.rawValue
+        case .secretPhrase, .secretPhraseInfo:
+            return ArbigramSettingsSection.secretPhrase.rawValue
         }
     }
 
@@ -170,6 +177,10 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return 101
         case .accounts:
             return 102
+        case .secretPhrase:
+            return 103
+        case .secretPhraseInfo:
+            return 104
         }
     }
 
@@ -204,6 +215,18 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: loc(presentationData.strings, "Аккаунты", "Accounts"), label: "", sectionId: self.section, style: .blocks, action: {
                 arguments.openAccounts()
             })
+        case let .secretPhrase(value):
+            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: ""), text: value, placeholder: loc(presentationData.strings, "Фраза для скрытых аккаунтов", "Phrase for hidden accounts"), type: .regular(capitalization: false, autocorrection: false), clearType: .always, sectionId: self.section, textUpdated: { value in
+                arguments.setSecretPhrase(value)
+            }, action: {})
+        case .secretPhraseInfo:
+            return ItemListTextItem(presentationData: presentationData, text: .plain(loc(presentationData.strings,
+                "Задай фразу, и в настройках аккаунта появится переключатель «Скрыть». Скрытый аккаунт исчезает отовсюду. Чтобы достать — введи фразу в поиск над списком чатов; поиск на неё не отреагирует, но скрытые вернутся до перезапуска.
+
+Эта строка сама пропадёт, как только хоть один аккаунт будет скрыт, и вернётся, когда ты их покажешь.",
+                "Set a phrase and a Hide switch appears in each account's settings. A hidden account disappears everywhere. To bring it back, type the phrase into the search above the chat list; search will not react to it, but hidden accounts return until the next launch.
+
+This row disappears once anything is hidden, and comes back when you reveal them.")), sectionId: self.section)
         }
     }
 }
@@ -217,6 +240,9 @@ private struct ArbigramSettingsState: Equatable {
     var ignoreCopyProtection: Bool
     var hideContactsTab: Bool
     var mutedAccountCount: Int
+    var secretPhrase: String
+    var hasHiddenAccounts: Bool
+    var hiddenRevealed: Bool
 
     init() {
         let settings = ArbigramSettings.shared
@@ -228,6 +254,9 @@ private struct ArbigramSettingsState: Equatable {
         self.ignoreCopyProtection = settings.ignoreCopyProtection
         self.hideContactsTab = settings.hideContactsTab
         self.mutedAccountCount = settings.mutedAccountIds.count
+        self.secretPhrase = settings.secretPhrase
+        self.hasHiddenAccounts = settings.hasHiddenAccounts
+        self.hiddenRevealed = settings.hiddenRevealed
     }
 }
 
@@ -246,6 +275,9 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
         pushControllerImpl?(arbigramNotificationAccountsController(context: context))
     }, openAccounts: {
         pushControllerImpl?(arbigramAccountsController(context: context))
+    }, setSecretPhrase: { value in
+        ArbigramSettings.shared.secretPhrase = value
+        statePromise.set(ArbigramSettingsState())
     })
 
     let signal = combineLatest(context.sharedContext.presentationData, statePromise.get())
@@ -259,6 +291,12 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
         entries.append(.notificationAccounts(state.mutedAccountCount))
         entries.append(.notificationAccountsInfo)
         entries.append(.accounts)
+        // The row is its own tell: once something is hidden it goes away, so a
+        // stranger sees no sign the feature is even configured.
+        if !state.hasHiddenAccounts || state.hiddenRevealed {
+            entries.append(.secretPhrase(state.secretPhrase))
+            entries.append(.secretPhraseInfo)
+        }
 
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
