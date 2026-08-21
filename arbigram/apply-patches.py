@@ -57,8 +57,9 @@ patch(
 )
 
 # ----------------------------------------------------------------- 2. stories
+CHAT_LIST_PATH = 'submodules/ChatListUI/Sources/ChatListControllerNode.swift'
 patch(
-    'submodules/ChatListUI/Sources/ChatListControllerNode.swift',
+    CHAT_LIST_PATH,
     """func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscriptions, isHidden: Bool) -> Bool {
     if !storySubscriptions.items.isEmpty {
         return true
@@ -71,10 +72,72 @@ patch(
     return false
 }""",
     """func shouldDisplayStoriesInChatListHeader(storySubscriptions: EngineStorySubscriptions, isHidden: Bool) -> Bool {
-    // ARBIGRAM: stories strip removed from the chat list header
+    // ARBIGRAM: switchable; with the switch off upstream's own rules decide
+    if ArbigramSettings.shared.hideStories {
+        return false
+    }
+    if !storySubscriptions.items.isEmpty {
+        return true
+    }
+    if !isHidden, let accountItem = storySubscriptions.accountItem {
+        if accountItem.hasPending || accountItem.storyCount != 0 {
+            return true
+        }
+    }
     return false
 }""",
-    'stories strip hidden',
+    'stories strip switchable',
+)
+
+patch(
+    CHAT_LIST_PATH,
+    "import AccountContext\nimport SearchBarNode",
+    "import AccountContext\nimport ArbigramSettings // ARBIGRAM\nimport SearchBarNode",
+    'stories: settings import',
+)
+
+patch(
+    CHAT_LIST_PATH,
+    "    weak var controller: ChatListControllerImpl?",
+    """    weak var controller: ChatListControllerImpl?
+
+    // ARBIGRAM: the header is decided during layout rather than from a
+    // subscription, so flipping the stories switch has to ask for a new pass.
+    private var arbigramSettingsObserver: NSObjectProtocol?""",
+    'stories: observer property',
+)
+
+patch(
+    CHAT_LIST_PATH,
+    """        self.controller = controller
+        
+        super.init()
+        
+        self.setViewBlock({""",
+    """        self.controller = controller
+        
+        super.init()
+        
+        self.arbigramSettingsObserver = NotificationCenter.default.addObserver(forName: ArbigramSettings.changedNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.controller?.requestLayout(transition: .immediate)
+        }
+        
+        self.setViewBlock({""",
+    'stories: observer registered',
+)
+
+patch(
+    CHAT_LIST_PATH,
+    "    init(context: AccountContext, location: ChatListControllerLocation, previewing: Bool,",
+    """    // ARBIGRAM
+    deinit {
+        if let arbigramSettingsObserver = self.arbigramSettingsObserver {
+            NotificationCenter.default.removeObserver(arbigramSettingsObserver)
+        }
+    }
+    
+    init(context: AccountContext, location: ChatListControllerLocation, previewing: Bool,""",
+    'stories: observer released',
 )
 
 # --------------------------------------------------------- 3. sponsored posts
@@ -82,8 +145,8 @@ AD_PATH = 'submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.sw
 patch(
     AD_PATH,
     "import TelegramApi\n",
-    "import TelegramApi\n\n// ARBIGRAM: master switch for sponsored (ad) messages\nprivate let arbigramHideSponsoredMessages = true\n",
-    'sponsored switch declared',
+    "import TelegramApi\nimport ArbigramSettings\n",
+    'sponsored: settings import',
 )
 patch(
     AD_PATH,
@@ -91,7 +154,7 @@ patch(
                 return .single((nil, nil, nil, []))
             }""",
     """            // ARBIGRAM: bail out before the sponsored-message request is issued
-            guard let inputPeer, !arbigramHideSponsoredMessages else {
+            guard let inputPeer, !ArbigramSettings.shared.hideSponsoredMessages else {
                 return .single((nil, nil, nil, []))
             }""",
     'sponsored messages never requested',
@@ -104,7 +167,7 @@ PI_PATH = 'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/Peer
 def id_row(item_const, value_expr):
     return r'''
         // ARBIGRAM: numeric peer id, tap to copy
-        do {
+        if ArbigramSettings.shared.showPeerId {
             let arbigramPeerIdText = "\(%s)"
             items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(
                 id: %s,
@@ -131,8 +194,8 @@ def id_row(item_const, value_expr):
 
 patch(PI_PATH,
       "import BoostLevelIconComponent\n",
-      "import BoostLevelIconComponent\nimport UndoUI // ARBIGRAM\n",
-      'peer id: UndoUI import')
+      "import BoostLevelIconComponent\nimport UndoUI // ARBIGRAM\nimport ArbigramSettings // ARBIGRAM\n",
+      'peer id: imports')
 
 patch(PI_PATH,
       "        let ItemAppFooter = 3005\n",
@@ -339,6 +402,94 @@ patch(
     'url=../tgcalls.git',
     'url = https://github.com/TelegramMessenger/tgcalls.git',
     'submodules: tgcalls url absolute',
+)
+
+# ------------------------------------------------- 11. settings screen wiring
+# The switches themselves, the store behind them and the screen that shows them
+# are Arbigram's own files and travel with the repository. What follows is only
+# what has to be threaded through upstream to reach them.
+
+SETTINGS_DEP = '        "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM'
+
+for build_file, dep_anchor in [
+    ('submodules/TelegramCore/BUILD', '        "//submodules/TelegramApi:TelegramApi",'),
+    ('submodules/ChatListUI/BUILD', '        "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",'),
+    ('submodules/TelegramUI/BUILD', '        "//third-party/recaptcha:RecaptchaEnterprise",'),
+    ('submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD', '        "//submodules/AccountContext",'),
+]:
+    patch(
+        build_file,
+        dep_anchor + '\n',
+        dep_anchor + '\n' + SETTINGS_DEP + '\n',
+        'settings: dep in %s' % build_file.split('/')[-2],
+    )
+
+# PeerInfoScreen cannot depend on TelegramUI, so the screen is reached through
+# the same SharedAccountContext factory the business and energy-saving screens
+# use.
+patch(
+    'submodules/AccountContext/Sources/AccountContext.swift',
+    '    func makeBusinessSetupScreen(context: AccountContext) -> ViewController\n',
+    '    func makeBusinessSetupScreen(context: AccountContext) -> ViewController\n'
+    '    func makeArbigramSettingsScreen(context: AccountContext) -> ViewController // ARBIGRAM\n',
+    'settings: factory declared',
+)
+
+patch(
+    'submodules/TelegramUI/Sources/SharedAccountContext.swift',
+    """    public func makeBusinessSetupScreen(context: AccountContext) -> ViewController {
+        return PremiumIntroScreen(context: context, mode: .business, source: .settings, modal: false, forceDark: false)
+    }""",
+    """    public func makeBusinessSetupScreen(context: AccountContext) -> ViewController {
+        return PremiumIntroScreen(context: context, mode: .business, source: .settings, modal: false, forceDark: false)
+    }
+    
+    // ARBIGRAM
+    public func makeArbigramSettingsScreen(context: AccountContext) -> ViewController {
+        return arbigramSettingsController(context: context)
+    }""",
+    'settings: factory implemented',
+)
+
+PEER_INFO_SCREEN = 'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreen.swift'
+patch(
+    PEER_INFO_SCREEN,
+    '    case powerSaving\n',
+    '    case powerSaving\n    case arbigram // ARBIGRAM\n',
+    'settings: section case',
+)
+
+patch(
+    'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift',
+    """        case .powerSaving:
+            push(energySavingSettingsScreen(context: self.context))""",
+    """        case .powerSaving:
+            push(energySavingSettingsScreen(context: self.context))
+        case .arbigram: // ARBIGRAM
+            push(self.context.sharedContext.makeArbigramSettingsScreen(context: self.context))""",
+    'settings: section routed',
+)
+
+patch(
+    'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift',
+    '    let languageName = presentationData.strings.primaryComponent.localizedName',
+    """    // ARBIGRAM: the fork's own switches
+    items[.advanced]!.append(PeerInfoScreenDisclosureItem(id: 7, text: "Arbigram", icon: PresentationResourcesSettings.arbigram, action: {
+        interaction.openSettings(.arbigram)
+    }))
+    
+    let languageName = presentationData.strings.primaryComponent.localizedName""",
+    'settings: row in the list',
+)
+
+# An existing glyph tinted with the fork's colour, so no new asset is needed.
+patch(
+    'submodules/TelegramPresentationData/Sources/Resources/PresentationResourcesSettings.swift',
+    '    public static let powerSaving = renderSettingsIcon(name: "Item List/Icons/PowerSaving", backgroundColors: [colorOrange])',
+    '    public static let powerSaving = renderSettingsIcon(name: "Item List/Icons/PowerSaving", backgroundColors: [colorOrange])\n'
+    "    // ARBIGRAM: an existing glyph tinted with the fork's own colour, so no new asset is needed\n"
+    '    public static let arbigram = renderSettingsIcon(name: "Item List/Icons/Brush", backgroundColors: [UIColor(rgb: 0x8B6DFF), UIColor(rgb: 0x6C4CF1)])',
+    'settings: row icon',
 )
 
 # ------------------------------------------------------------------- report
