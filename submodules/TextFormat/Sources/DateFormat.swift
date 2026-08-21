@@ -2,6 +2,7 @@ import Foundation
 import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
+import ArbigramSettings
 
 public func stringForEntityFormattedDate(timestamp: Int32, format: MessageTextEntityType.DateTimeFormat, strings: PresentationStrings, dateTimeFormat: PresentationDateTimeFormat) -> String {
     switch format {
@@ -132,6 +133,8 @@ public func stringForShortTimestamp(hours: Int32, minutes: Int32, seconds: Int32
 }
 
 public func stringForMessageTimestamp(timestamp: Int32, dateTimeFormat: PresentationDateTimeFormat, withSeconds: Bool = false, local: Bool = true) -> String {
+    // ARBIGRAM
+    let withSeconds = withSeconds || ArbigramSettings.shared.timestampSeconds
     var t = Int(timestamp)
     var timeinfo = tm()
     if local {

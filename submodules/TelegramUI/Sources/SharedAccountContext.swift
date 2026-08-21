@@ -10,6 +10,7 @@ import TelegramCallsUI
 import TelegramUIPreferences
 import TelegramStringFormatting
 import AccountContext
+import ArbigramSettings
 import DeviceLocationManager
 import ItemListUI
 import LegacyUI
@@ -281,7 +282,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     
     private var immediateExperimentalUISettingsValue = Atomic<ExperimentalUISettings>(value: ExperimentalUISettings.defaultSettings)
     public var immediateExperimentalUISettings: ExperimentalUISettings {
-        return self.immediateExperimentalUISettingsValue.with { $0 }
+        var settings = self.immediateExperimentalUISettingsValue.with { $0 }
+        // ARBIGRAM: read receipts are switchable; upstream reads this flag in
+        // every place a read is reported, so overlaying it here covers them all
+        if ArbigramSettings.shared.skipReadHistory {
+            settings.skipReadHistory = true
+        }
+        return settings
     }
     private var experimentalUISettingsDisposable: Disposable?
     

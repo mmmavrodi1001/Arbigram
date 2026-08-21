@@ -8,61 +8,148 @@ import PresentationDataUtils
 import AccountContext
 import ArbigramSettings
 
+/// Two languages, picked from the app's own. New keys cannot go into the
+/// localisation files without regenerating the whole string table, and the fork
+/// is read by exactly two audiences.
+private func loc(_ strings: PresentationStrings, _ ru: String, _ en: String) -> String {
+    return strings.baseLanguageCode.hasPrefix("ru") ? ru : en
+}
+
 private enum ArbigramSettingsSection: Int32 {
     case stories
     case sponsored
     case peerId
+    case readReceipts
+    case inputActivity
+    case copyProtection
+    case timestampSeconds
 }
 
 private final class ArbigramSettingsArguments {
-    let setHideStories: (Bool) -> Void
-    let setHideSponsoredMessages: (Bool) -> Void
-    let setShowPeerId: (Bool) -> Void
+    let set: (ArbigramSwitch, Bool) -> Void
 
-    init(
-        setHideStories: @escaping (Bool) -> Void,
-        setHideSponsoredMessages: @escaping (Bool) -> Void,
-        setShowPeerId: @escaping (Bool) -> Void
-    ) {
-        self.setHideStories = setHideStories
-        self.setHideSponsoredMessages = setHideSponsoredMessages
-        self.setShowPeerId = setShowPeerId
+    init(set: @escaping (ArbigramSwitch, Bool) -> Void) {
+        self.set = set
+    }
+}
+
+private enum ArbigramSwitch: Int32, CaseIterable {
+    case hideStories
+    case hideSponsoredMessages
+    case showPeerId
+    case skipReadHistory
+    case hideInputActivity
+    case ignoreCopyProtection
+    case timestampSeconds
+
+    var section: ArbigramSettingsSection {
+        switch self {
+        case .hideStories: return .stories
+        case .hideSponsoredMessages: return .sponsored
+        case .showPeerId: return .peerId
+        case .skipReadHistory: return .readReceipts
+        case .hideInputActivity: return .inputActivity
+        case .ignoreCopyProtection: return .copyProtection
+        case .timestampSeconds: return .timestampSeconds
+        }
+    }
+
+    func title(_ strings: PresentationStrings) -> String {
+        switch self {
+        case .hideStories:
+            return loc(strings, "Скрыть Истории", "Hide Stories")
+        case .hideSponsoredMessages:
+            return loc(strings, "Убрать рекламу", "Hide Sponsored Messages")
+        case .showPeerId:
+            return loc(strings, "Показывать ID в профилях", "Show ID in Profiles")
+        case .skipReadHistory:
+            return loc(strings, "Не отправлять «прочитано»", "Don't Send Read Receipts")
+        case .hideInputActivity:
+            return loc(strings, "Скрыть «печатает…»", "Hide Typing Status")
+        case .ignoreCopyProtection:
+            return loc(strings, "Копировать и скачивать везде", "Ignore Copy Protection")
+        case .timestampSeconds:
+            return loc(strings, "Секунды во времени сообщений", "Seconds in Timestamps")
+        }
+    }
+
+    func info(_ strings: PresentationStrings) -> String {
+        switch self {
+        case .hideStories:
+            return loc(strings,
+                       "Убирает ленту историй над списком чатов.",
+                       "Removes the stories strip above the chat list.")
+        case .hideSponsoredMessages:
+            return loc(strings,
+                       "Спонсорские сообщения не запрашиваются у сервера, а не прячутся после получения. Уже открытые чаты доживут со своим состоянием до переоткрытия.",
+                       "Sponsored messages are never requested from the server rather than hidden on arrival. Chats already open keep their current state until reopened.")
+        case .showPeerId:
+            return loc(strings,
+                       "Добавляет числовой идентификатор в профили людей, групп и каналов. Нажатие копирует.",
+                       "Adds the numeric identifier to user, group and channel profiles. Tap it to copy.")
+        case .skipReadHistory:
+            return loc(strings,
+                       "Собеседник не увидит, что сообщение прочитано. Распространяется и на реакции, и на истории. Учти: пока ты не отправляешь отметки, чужие отметки о прочтении тебе тоже приходят не всегда.",
+                       "Nobody sees your messages marked as read — reactions and stories included. Note that while you withhold receipts, other people's are not always delivered to you either.")
+        case .hideInputActivity:
+            return loc(strings,
+                       "Не отправлять «печатает…», «записывает голосовое» и «отправляет файл».",
+                       "Stops sending typing, voice-recording and file-uploading indicators.")
+        case .ignoreCopyProtection:
+            return loc(strings,
+                       "Выделение текста, копирование и сохранение медиа работают в чатах и каналах с запретом на пересылку.",
+                       "Text selection, copying and saving media work in chats and channels that forbid forwarding.")
+        case .timestampSeconds:
+            return loc(strings,
+                       "Показывать время сообщений с точностью до секунды.",
+                       "Show message times down to the second.")
+        }
+    }
+
+    func value(_ settings: ArbigramSettingsState) -> Bool {
+        switch self {
+        case .hideStories: return settings.hideStories
+        case .hideSponsoredMessages: return settings.hideSponsoredMessages
+        case .showPeerId: return settings.showPeerId
+        case .skipReadHistory: return settings.skipReadHistory
+        case .hideInputActivity: return settings.hideInputActivity
+        case .ignoreCopyProtection: return settings.ignoreCopyProtection
+        case .timestampSeconds: return settings.timestampSeconds
+        }
+    }
+
+    func write(_ value: Bool) {
+        switch self {
+        case .hideStories: ArbigramSettings.shared.hideStories = value
+        case .hideSponsoredMessages: ArbigramSettings.shared.hideSponsoredMessages = value
+        case .showPeerId: ArbigramSettings.shared.showPeerId = value
+        case .skipReadHistory: ArbigramSettings.shared.skipReadHistory = value
+        case .hideInputActivity: ArbigramSettings.shared.hideInputActivity = value
+        case .ignoreCopyProtection: ArbigramSettings.shared.ignoreCopyProtection = value
+        case .timestampSeconds: ArbigramSettings.shared.timestampSeconds = value
+        }
     }
 }
 
 private enum ArbigramSettingsEntry: ItemListNodeEntry {
-    case hideStories(Bool)
-    case hideStoriesInfo
-    case hideSponsoredMessages(Bool)
-    case hideSponsoredMessagesInfo
-    case showPeerId(Bool)
-    case showPeerIdInfo
+    case toggle(ArbigramSwitch, Bool)
+    case info(ArbigramSwitch)
 
     var section: ItemListSectionId {
         switch self {
-        case .hideStories, .hideStoriesInfo:
-            return ArbigramSettingsSection.stories.rawValue
-        case .hideSponsoredMessages, .hideSponsoredMessagesInfo:
-            return ArbigramSettingsSection.sponsored.rawValue
-        case .showPeerId, .showPeerIdInfo:
-            return ArbigramSettingsSection.peerId.rawValue
+        case let .toggle(item, _):
+            return item.section.rawValue
+        case let .info(item):
+            return item.section.rawValue
         }
     }
 
     var stableId: Int32 {
         switch self {
-        case .hideStories:
-            return 0
-        case .hideStoriesInfo:
-            return 1
-        case .hideSponsoredMessages:
-            return 2
-        case .hideSponsoredMessagesInfo:
-            return 3
-        case .showPeerId:
-            return 4
-        case .showPeerIdInfo:
-            return 5
+        case let .toggle(item, _):
+            return item.rawValue * 2
+        case let .info(item):
+            return item.rawValue * 2 + 1
         }
     }
 
@@ -73,24 +160,12 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! ArbigramSettingsArguments
         switch self {
-        case let .hideStories(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Hide Stories", value: value, sectionId: self.section, style: .blocks, updated: { value in
-                arguments.setHideStories(value)
+        case let .toggle(item, value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: item.title(presentationData.strings), value: value, maximumNumberOfLines: 2, sectionId: self.section, style: .blocks, updated: { value in
+                arguments.set(item, value)
             })
-        case .hideStoriesInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Removes the stories strip above the chat list."), sectionId: self.section)
-        case let .hideSponsoredMessages(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Hide Sponsored Messages", value: value, sectionId: self.section, style: .blocks, updated: { value in
-                arguments.setHideSponsoredMessages(value)
-            })
-        case .hideSponsoredMessagesInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Ads are never requested from the server rather than hidden after arriving. Chats already open keep their current state until reopened."), sectionId: self.section)
-        case let .showPeerId(value):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: "Show ID in Profiles", value: value, sectionId: self.section, style: .blocks, updated: { value in
-                arguments.setShowPeerId(value)
-            })
-        case .showPeerIdInfo:
-            return ItemListTextItem(presentationData: presentationData, text: .plain("Adds the numeric identifier to user, group and channel profiles. Tap it to copy."), sectionId: self.section)
+        case let .info(item):
+            return ItemListTextItem(presentationData: presentationData, text: .plain(item.info(presentationData.strings)), sectionId: self.section)
         }
     }
 }
@@ -99,53 +174,43 @@ private struct ArbigramSettingsState: Equatable {
     var hideStories: Bool
     var hideSponsoredMessages: Bool
     var showPeerId: Bool
+    var skipReadHistory: Bool
+    var hideInputActivity: Bool
+    var ignoreCopyProtection: Bool
+    var timestampSeconds: Bool
 
     init() {
-        self.hideStories = ArbigramSettings.shared.hideStories
-        self.hideSponsoredMessages = ArbigramSettings.shared.hideSponsoredMessages
-        self.showPeerId = ArbigramSettings.shared.showPeerId
+        let settings = ArbigramSettings.shared
+        self.hideStories = settings.hideStories
+        self.hideSponsoredMessages = settings.hideSponsoredMessages
+        self.showPeerId = settings.showPeerId
+        self.skipReadHistory = settings.skipReadHistory
+        self.hideInputActivity = settings.hideInputActivity
+        self.ignoreCopyProtection = settings.ignoreCopyProtection
+        self.timestampSeconds = settings.timestampSeconds
     }
-}
-
-private func arbigramSettingsEntries(state: ArbigramSettingsState) -> [ArbigramSettingsEntry] {
-    return [
-        .hideStories(state.hideStories),
-        .hideStoriesInfo,
-        .hideSponsoredMessages(state.hideSponsoredMessages),
-        .hideSponsoredMessagesInfo,
-        .showPeerId(state.showPeerId),
-        .showPeerIdInfo,
-    ]
 }
 
 /// The switches are not backed by a signal — the store has to be readable from
-/// TelegramCore, which rules out the account manager. So the screen mirrors the
-/// store into its own state and writes through on every change.
+/// TelegramCore, which rules out the account manager. So the screen re-reads the
+/// store after every write.
 public func arbigramSettingsController(context: AccountContext) -> ViewController {
     let statePromise = ValuePromise(ArbigramSettingsState(), ignoreRepeated: true)
-    let stateValue = Atomic(value: ArbigramSettingsState())
-    let updateState: ((inout ArbigramSettingsState) -> Void) -> Void = { f in
-        statePromise.set(stateValue.modify { current in
-            var updated = current
-            f(&updated)
-            return updated
-        })
-    }
 
-    let arguments = ArbigramSettingsArguments(setHideStories: { value in
-        ArbigramSettings.shared.hideStories = value
-        updateState { $0.hideStories = value }
-    }, setHideSponsoredMessages: { value in
-        ArbigramSettings.shared.hideSponsoredMessages = value
-        updateState { $0.hideSponsoredMessages = value }
-    }, setShowPeerId: { value in
-        ArbigramSettings.shared.showPeerId = value
-        updateState { $0.showPeerId = value }
+    let arguments = ArbigramSettingsArguments(set: { item, value in
+        item.write(value)
+        statePromise.set(ArbigramSettingsState())
     })
 
     let signal = combineLatest(context.sharedContext.presentationData, statePromise.get())
     |> deliverOnMainQueue
     |> map { presentationData, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        var entries: [ArbigramSettingsEntry] = []
+        for item in ArbigramSwitch.allCases {
+            entries.append(.toggle(item, item.value(state)))
+            entries.append(.info(item))
+        }
+
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
             title: .text("Arbigram"),
@@ -155,7 +220,7 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
         )
         let listState = ItemListNodeState(
             presentationData: ItemListPresentationData(presentationData),
-            entries: arbigramSettingsEntries(state: state),
+            entries: entries,
             style: .blocks
         )
         return (controllerState, (listState, arguments))

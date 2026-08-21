@@ -66,6 +66,16 @@ public struct EmojiInteraction: Equatable {
     }
 }
 
+public extension PeerInputActivity {
+    // ARBIGRAM
+    var isArbigramGroupCallSpeaking: Bool {
+        if case .speakingInGroupCall = self {
+            return true
+        }
+        return false
+    }
+}
+
 public enum PeerInputActivity: Comparable {
     case typingText
     case uploadingFile(progress: Int32)

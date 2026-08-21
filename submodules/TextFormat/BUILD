@@ -13,6 +13,7 @@ swift_library(
     ],
     deps = [
         "//submodules/SSignalKit/SwiftSignalKit",
+        "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM
     	"//submodules/TelegramCore:TelegramCore",
         "//submodules/Display:Display",
         "//submodules/TelegramPresentationData:TelegramPresentationData",

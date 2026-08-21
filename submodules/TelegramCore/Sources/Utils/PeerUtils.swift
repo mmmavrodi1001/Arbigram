@@ -1,5 +1,6 @@
 import Foundation
 import Postbox
+import ArbigramSettings
 
 public let anonymousSavedMessagesId: Int64 = 2666000
 
@@ -252,6 +253,10 @@ public extension Peer {
     }
     
     var isCopyProtectionEnabled: Bool {
+        // ARBIGRAM: text selection and media saving both hang off this flag
+        if ArbigramSettings.shared.ignoreCopyProtection {
+            return false
+        }
         switch self {
         case let group as TelegramGroup:
             return group.flags.contains(.copyProtectionEnabled)
