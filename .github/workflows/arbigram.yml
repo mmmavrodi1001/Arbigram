@@ -153,9 +153,10 @@ jobs:
           mv build/artifacts/Telegram.ipa "build/artifacts/Arbigram-$APP_VERSION-$BUILD_NUMBER.ipa"
           ls -lh build/artifacts
 
-      # An IPA signed for a registered device installs straight from Safari when
-      # iOS is handed a manifest describing it. The manifest has to live on
-      # HTTPS, so the package goes to a release and the page to Pages.
+      # An IPA signed for a provisioned device installs straight from Safari when
+      # iOS is handed a manifest describing it. Manifest, package and icons all
+      # hang off one release, so the install works whether or not the page below
+      # ever deploys, and every build keeps its own installable copy.
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -168,31 +169,25 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Arbigram $APP_VERSION ($BUILD_NUMBER)" \
-            --notes "Signed for the provisioned device. Install from the page, or download the package directly."
-          echo "IPA_URL=https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$(basename "$IPA")" >> "$GITHUB_ENV"
-
-      - name: Configure Pages
-        id: pages_config
-        uses: actions/configure-pages@v5
-        with:
-          enablement: true
+            --notes "Signed for the provisioned device. Open the install page on the phone, or download the package directly."
+          echo "ASSET_BASE=https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" >> "$GITHUB_ENV"
 
       - name: Build install page
         run: |
           cd /Users/Shared/arbigram
           python3 arbigram/make-site.py \
             --ipa "build/artifacts/Arbigram-$APP_VERSION-$BUILD_NUMBER.ipa" \
-            --base-url "${{ steps.pages_config.outputs.base_url }}" \
-            --ipa-url "$IPA_URL" \
+            --asset-base "$ASSET_BASE" \
             --out site
 
-      - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: /Users/Shared/arbigram/site
-
-      - name: Deploy Pages
-        uses: actions/deploy-pages@v4
+      - name: Attach manifest to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd /Users/Shared/arbigram
+          gh release upload "b$BUILD_NUMBER" \
+            site/manifest.plist site/icon-57.png site/icon-512.png \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
@@ -201,3 +196,30 @@ jobs:
           path: /Users/Shared/arbigram/build/artifacts/*.ipa
           if-no-files-found: error
           retention-days: 30
+
+      # The page is a convenience on top of a release that is already
+      # installable, so a Pages hiccup must not fail a build that produced one.
+      # Enabling Pages is a one-time repository setting: the build token cannot
+      # create the site, only publish to it.
+      - name: Configure Pages
+        id: pages_config
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        if: steps.pages_config.outcome == 'success'
+        continue-on-error: true
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: /Users/Shared/arbigram/site
+
+      - name: Deploy Pages
+        if: steps.pages_config.outcome == 'success'
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Where to install from
+        run: |
+          echo "install page:  ${{ steps.pages_config.outputs.base_url }}"
+          echo "manifest:      $ASSET_BASE/manifest.plist"
+          echo "package:       $ASSET_BASE/Arbigram-$APP_VERSION-$BUILD_NUMBER.ipa"

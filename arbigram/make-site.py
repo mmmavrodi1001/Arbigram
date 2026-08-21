@@ -7,10 +7,12 @@ itms-services:// link pointing at a manifest. The manifest has to sit on HTTPS
 and name the exact bundle id and version of the package it describes, so all of
 that is read back out of the built IPA rather than repeated by hand.
 
+Manifest, package and both icons hang off the same release, so an install does
+not wait on the page ever deploying.
+
   python3 arbigram/make-site.py \\
       --ipa build/artifacts/Arbigram-12.9.2-30751.ipa \\
-      --base-url https://user.github.io/Arbigram \\
-      --ipa-url https://github.com/user/Arbigram/releases/download/b30751/Arbigram-12.9.2-30751.ipa \\
+      --asset-base https://github.com/user/Arbigram/releases/download/b30751 \\
       --out site
 """
 
@@ -42,13 +44,13 @@ def read_ipa(path):
     }
 
 
-def write_manifest(out, app, ipa_url, base_url):
+def write_manifest(out, app, ipa_url, asset_base):
     manifest = {
         'items': [{
             'assets': [
                 {'kind': 'software-package', 'url': ipa_url},
-                {'kind': 'display-image', 'url': base_url + '/icon-57.png'},
-                {'kind': 'full-size-image', 'url': base_url + '/icon-512.png'},
+                {'kind': 'display-image', 'url': asset_base + '/icon-57.png'},
+                {'kind': 'full-size-image', 'url': asset_base + '/icon-512.png'},
             ],
             'metadata': {
                 'bundle-identifier': app['bundle_id'],
@@ -62,9 +64,9 @@ def write_manifest(out, app, ipa_url, base_url):
         plistlib.dump(manifest, f)
 
 
-def write_index(out, app, ipa_url, base_url, size_mb):
+def write_index(out, app, ipa_url, asset_base, size_mb):
     template = io.open(os.path.join(HERE, 'site', 'index.html'), encoding='utf-8').read()
-    install_url = 'itms-services://?action=download-manifest&amp;url=%s/manifest.plist' % base_url
+    install_url = 'itms-services://?action=download-manifest&amp;url=%s/manifest.plist' % asset_base
     filled = (template
               .replace('__TITLE__', app['title'])
               .replace('__VERSION__', app['version'])
@@ -79,12 +81,13 @@ def write_index(out, app, ipa_url, base_url, size_mb):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--ipa', required=True)
-    ap.add_argument('--base-url', required=True, help='https root the page is served from, no trailing slash')
-    ap.add_argument('--ipa-url', required=True, help='https url the package itself is downloaded from')
+    ap.add_argument('--asset-base', required=True,
+                    help='https url of the release the package and manifest hang off, no trailing slash')
     ap.add_argument('--out', default='site')
     args = ap.parse_args()
 
-    base_url = args.base_url.rstrip('/')
+    asset_base = args.asset_base.rstrip('/')
+    ipa_url = '%s/%s' % (asset_base, os.path.basename(args.ipa))
     app = read_ipa(args.ipa)
     size_mb = os.path.getsize(args.ipa) / (1024.0 * 1024.0)
 
@@ -92,16 +95,17 @@ def main():
     for icon in ('icon-57.png', 'icon-512.png'):
         shutil.copyfile(os.path.join(HERE, 'site', icon), os.path.join(args.out, icon))
 
-    write_manifest(args.out, app, args.ipa_url, base_url)
-    write_index(args.out, app, args.ipa_url, base_url, size_mb)
+    write_manifest(args.out, app, ipa_url, asset_base)
+    write_index(args.out, app, ipa_url, asset_base, size_mb)
 
     # A .nojekyll keeps Pages from running the files through Jekyll, which would
     # otherwise be free to reinterpret anything starting with an underscore.
     io.open(os.path.join(args.out, '.nojekyll'), 'w').write('')
 
     print('%s  ->  %s %s (%s), %.0f MB' % (args.out, app['title'], app['version'], app['build'], size_mb))
-    print('manifest: %s/manifest.plist' % base_url)
-    print('package:  %s' % args.ipa_url)
+    print('manifest: %s/manifest.plist' % asset_base)
+    print('package:  %s' % ipa_url)
+    print('install:  itms-services://?action=download-manifest&url=%s/manifest.plist' % asset_base)
 
 
 if __name__ == '__main__':
