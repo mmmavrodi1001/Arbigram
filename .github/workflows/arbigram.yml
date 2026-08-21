@@ -45,8 +45,11 @@ jobs:
           cp -R "$GITHUB_WORKSPACE" /Users/Shared/
           mv "/Users/Shared/$(basename "$GITHUB_WORKSPACE")" /Users/Shared/arbigram
 
+      # cache/restore plus a cache/save that also runs on failure. The combined
+      # actions/cache action registers its save step as post-if: success(), so a
+      # build that dies at the last step throws away everything it compiled.
       - name: Restore bazel cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ~/arbigram-bazel-cache
           key: bazel-${{ runner.os }}-${{ hashFiles('versions.json') }}-${{ github.sha }}
@@ -122,15 +125,21 @@ jobs:
             --configurationPath=build-system/arbigram-configuration.json \
             --codesigningInformationPath=build-system/arbigram-codesigning \
             --configuration=${{ inputs.configuration }} \
-            --buildNumber="$BUILD_NUMBER"
+            --buildNumber="$BUILD_NUMBER" \
+            --outputBuildArtifactsPath=build/artifacts
+
+      - name: Save bazel cache
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: ~/arbigram-bazel-cache
+          key: bazel-${{ runner.os }}-${{ hashFiles('versions.json') }}-${{ github.sha }}
 
       - name: Collect artifacts
         run: |
           cd /Users/Shared/arbigram
-          mkdir -p build/artifacts
-          for f in bazel-out/applebin_ios-ios_arm*-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" "build/artifacts/Arbigram-$APP_VERSION-$BUILD_NUMBER.ipa"
-          done
+          mv build/artifacts/Telegram.ipa "build/artifacts/Arbigram-$APP_VERSION-$BUILD_NUMBER.ipa"
           ls -lh build/artifacts
 
       - name: Upload IPA
