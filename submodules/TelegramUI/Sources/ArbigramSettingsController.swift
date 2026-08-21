@@ -22,7 +22,6 @@ private enum ArbigramSettingsSection: Int32 {
     case readReceipts
     case inputActivity
     case copyProtection
-    case timestampSeconds
 }
 
 private final class ArbigramSettingsArguments {
@@ -40,7 +39,6 @@ private enum ArbigramSwitch: Int32, CaseIterable {
     case skipReadHistory
     case hideInputActivity
     case ignoreCopyProtection
-    case timestampSeconds
 
     var section: ArbigramSettingsSection {
         switch self {
@@ -50,7 +48,6 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .skipReadHistory: return .readReceipts
         case .hideInputActivity: return .inputActivity
         case .ignoreCopyProtection: return .copyProtection
-        case .timestampSeconds: return .timestampSeconds
         }
     }
 
@@ -68,8 +65,6 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings, "Скрыть «печатает…»", "Hide Typing Status")
         case .ignoreCopyProtection:
             return loc(strings, "Копировать и скачивать везде", "Ignore Copy Protection")
-        case .timestampSeconds:
-            return loc(strings, "Секунды во времени сообщений", "Seconds in Timestamps")
         }
     }
 
@@ -99,10 +94,6 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings,
                        "Выделение текста, копирование и сохранение медиа работают в чатах и каналах с запретом на пересылку.",
                        "Text selection, copying and saving media work in chats and channels that forbid forwarding.")
-        case .timestampSeconds:
-            return loc(strings,
-                       "Показывать время сообщений с точностью до секунды.",
-                       "Show message times down to the second.")
         }
     }
 
@@ -114,7 +105,6 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .skipReadHistory: return settings.skipReadHistory
         case .hideInputActivity: return settings.hideInputActivity
         case .ignoreCopyProtection: return settings.ignoreCopyProtection
-        case .timestampSeconds: return settings.timestampSeconds
         }
     }
 
@@ -126,7 +116,6 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .skipReadHistory: ArbigramSettings.shared.skipReadHistory = value
         case .hideInputActivity: ArbigramSettings.shared.hideInputActivity = value
         case .ignoreCopyProtection: ArbigramSettings.shared.ignoreCopyProtection = value
-        case .timestampSeconds: ArbigramSettings.shared.timestampSeconds = value
         }
     }
 }
@@ -177,7 +166,6 @@ private struct ArbigramSettingsState: Equatable {
     var skipReadHistory: Bool
     var hideInputActivity: Bool
     var ignoreCopyProtection: Bool
-    var timestampSeconds: Bool
 
     init() {
         let settings = ArbigramSettings.shared
@@ -187,7 +175,6 @@ private struct ArbigramSettingsState: Equatable {
         self.skipReadHistory = settings.skipReadHistory
         self.hideInputActivity = settings.hideInputActivity
         self.ignoreCopyProtection = settings.ignoreCopyProtection
-        self.timestampSeconds = settings.timestampSeconds
     }
 }
 

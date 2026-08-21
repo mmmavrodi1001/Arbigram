@@ -7,8 +7,8 @@ import Foundation
 /// read from inside it — the sponsored-message request is refused there, before
 /// it is ever issued, rather than filtered afterwards. UserDefaults in the
 /// shared app group is the one store both ends can reach, and it answers
-/// synchronously, which the call sites need: a chat opening, a chat-list layout
-/// pass and a timestamp being formatted have nowhere to await a signal.
+/// synchronously, which the call sites need: a chat opening and a chat-list
+/// layout pass have nowhere to await a signal.
 public final class ArbigramSettings {
     public static let shared = ArbigramSettings()
 
@@ -26,7 +26,6 @@ public final class ArbigramSettings {
         case skipReadHistory = "arbigram.skipReadHistory"
         case hideInputActivity = "arbigram.hideInputActivity"
         case ignoreCopyProtection = "arbigram.ignoreCopyProtection"
-        case timestampSeconds = "arbigram.timestampSeconds"
 
         /// The first three replaced constants that were compiled in, so they
         /// keep that behaviour. The rest are new and stay out of the way until
@@ -35,7 +34,7 @@ public final class ArbigramSettings {
             switch self {
             case .hideStories, .hideSponsoredMessages, .showPeerId:
                 return true
-            case .skipReadHistory, .hideInputActivity, .ignoreCopyProtection, .timestampSeconds:
+            case .skipReadHistory, .hideInputActivity, .ignoreCopyProtection:
                 return false
             }
         }
@@ -87,12 +86,6 @@ public final class ArbigramSettings {
     public var ignoreCopyProtection: Bool {
         get { return self.defaults.bool(forKey: Key.ignoreCopyProtection.rawValue) }
         set { self.set(.ignoreCopyProtection, newValue) }
-    }
-
-    /// Seconds in message timestamps.
-    public var timestampSeconds: Bool {
-        get { return self.defaults.bool(forKey: Key.timestampSeconds.rawValue) }
-        set { self.set(.timestampSeconds, newValue) }
     }
 
     private func set(_ key: Key, _ value: Bool) {
