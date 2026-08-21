@@ -57,26 +57,28 @@ private final class ArbigramAccountsArguments {
     let openAccount: (Int64) -> Void
     let togglePinned: (Int64) -> Void
     let setRevealed: (EnginePeer.Id?) -> Void
+    let toggleSelected: (Int64) -> Void
 
-    init(context: AccountContext, openAccount: @escaping (Int64) -> Void, togglePinned: @escaping (Int64) -> Void, setRevealed: @escaping (EnginePeer.Id?) -> Void) {
+    init(context: AccountContext, openAccount: @escaping (Int64) -> Void, togglePinned: @escaping (Int64) -> Void, setRevealed: @escaping (EnginePeer.Id?) -> Void, toggleSelected: @escaping (Int64) -> Void) {
         self.context = context
         self.openAccount = openAccount
         self.togglePinned = togglePinned
         self.setRevealed = setRevealed
+        self.toggleSelected = toggleSelected
     }
 }
 
 private enum ArbigramAccountsEntry: ItemListNodeEntry {
     case pinnedHeader(String)
     case otherHeader(String)
-    case account(index: Int, pinned: Bool, row: ArbigramAccountRow, editing: Bool, revealed: Bool, context: AccountContext)
+    case account(index: Int, pinned: Bool, row: ArbigramAccountRow, editing: Bool, revealed: Bool, selected: Bool?, context: AccountContext)
     case info(String)
 
     var section: ItemListSectionId {
         switch self {
         case .pinnedHeader:
             return arbigramAccountsSectionPinned
-        case let .account(_, pinned, _, _, _, _):
+        case let .account(_, pinned, _, _, _, _, _):
             return pinned ? arbigramAccountsSectionPinned : arbigramAccountsSectionOther
         case .otherHeader, .info:
             return arbigramAccountsSectionOther
@@ -89,7 +91,7 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
             return 0
         case .otherHeader:
             return 1
-        case let .account(index, _, _, _, _, _):
+        case let .account(index, _, _, _, _, _, _):
             return Int32(100 + index)
         case .info:
             return 10000
@@ -113,9 +115,9 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
                 return true
             }
             return false
-        case let .account(lhsIndex, lhsPinned, lhsRow, lhsEditing, lhsRevealed, _):
-            if case let .account(rhsIndex, rhsPinned, rhsRow, rhsEditing, rhsRevealed, _) = rhs {
-                return lhsIndex == rhsIndex && lhsPinned == rhsPinned && lhsRow == rhsRow && lhsEditing == rhsEditing && lhsRevealed == rhsRevealed
+        case let .account(lhsIndex, lhsPinned, lhsRow, lhsEditing, lhsRevealed, lhsSelected, _):
+            if case let .account(rhsIndex, rhsPinned, rhsRow, rhsEditing, rhsRevealed, rhsSelected, _) = rhs {
+                return lhsIndex == rhsIndex && lhsPinned == rhsPinned && lhsRow == rhsRow && lhsEditing == rhsEditing && lhsRevealed == rhsRevealed && lhsSelected == rhsSelected
             }
             return false
         }
@@ -132,7 +134,7 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
             return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
         case let .info(text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
-        case let .account(_, pinned, row, editing, revealed, accountContext):
+        case let .account(_, pinned, row, editing, revealed, selected, accountContext):
             // Each row's avatar belongs to a different account, so the item is
             // handed that account's engine rather than the current one.
             let itemContext = ItemListPeerItem.Context.custom(ItemListPeerItem.Context.Custom(
@@ -177,12 +179,16 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
                         arguments.togglePinned(row.userId)
                     })
                 ]),
-                switchValue: nil,
+                switchValue: selected.flatMap { ItemListPeerItemSwitch(value: $0, style: .check) },
                 enabled: true,
                 selectable: true,
                 sectionId: self.section,
                 action: {
-                    arguments.openAccount(row.userId)
+                    if selected != nil {
+                        arguments.toggleSelected(row.userId)
+                    } else {
+                        arguments.openAccount(row.userId)
+                    }
                 },
                 setPeerIdWithRevealedOptions: { peerId, _ in
                     arguments.setRevealed(peerId)
@@ -215,6 +221,8 @@ private struct ArbigramAccountsState: Equatable {
     var revealedPeerId: EnginePeer.Id?
     var reorderedIds: [Int64]?
     var metaRevision: Int = 0
+    var selecting: Bool = false
+    var selectedIds: Set<Int64> = []
 }
 
 public func arbigramAccountsController(context: AccountContext) -> ViewController {
@@ -229,6 +237,8 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
     }
 
     var pushControllerImpl: ((ViewController) -> Void)?
+    var presentControllerImpl: ((ViewController) -> Void)?
+    var presentGroupActionsImpl: ((Set<Int64>) -> Void)?
     let actionsDisposable = DisposableSet()
 
     let arguments = ArbigramAccountsArguments(context: context, openAccount: { userId in
@@ -243,6 +253,14 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
         }
     }, setRevealed: { peerId in
         updateState { $0.revealedPeerId = peerId }
+    }, toggleSelected: { userId in
+        updateState { state in
+            if state.selectedIds.contains(userId) {
+                state.selectedIds.remove(userId)
+            } else {
+                state.selectedIds.insert(userId)
+            }
+        }
     })
 
     let signal = combineLatest(
@@ -291,30 +309,51 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
         if !pinned.isEmpty {
             entries.append(.pinnedHeader(isRussian ? "ЗАКРЕПЛЁННЫЕ" : "PINNED"))
             for entry in pinned {
-                entries.append(.account(index: index, pinned: true, row: entry.row, editing: state.editing, revealed: state.revealedPeerId == entry.row.peer.id, context: entry.context))
+                entries.append(.account(index: index, pinned: true, row: entry.row, editing: state.editing, revealed: state.revealedPeerId == entry.row.peer.id, selected: state.selecting ? state.selectedIds.contains(entry.row.userId) : nil, context: entry.context))
                 index += 1
             }
             entries.append(.otherHeader(isRussian ? "ОСТАЛЬНЫЕ" : "OTHER"))
         }
         for entry in others {
-            entries.append(.account(index: index, pinned: false, row: entry.row, editing: state.editing, revealed: state.revealedPeerId == entry.row.peer.id, context: entry.context))
+            entries.append(.account(index: index, pinned: false, row: entry.row, editing: state.editing, revealed: state.revealedPeerId == entry.row.peer.id, selected: state.selecting ? state.selectedIds.contains(entry.row.userId) : nil, context: entry.context))
             index += 1
         }
         entries.append(.info(isRussian
             ? "Потяни за строку, чтобы поменять порядок — он станет общим для всего приложения. Смахни влево, чтобы закрепить. Нажми на аккаунт, чтобы задать цвет, теги и заметку."
             : "Drag a row to change the order — it becomes the app's own. Swipe left to pin. Tap an account to give it a colour, tags and a note."))
 
-        let rightNavigationButton = ItemListNavigationButton(content: .text(state.editing ? presentationData.strings.Common_Done : presentationData.strings.Common_Edit), style: state.editing ? .bold : .regular, enabled: true, action: {
-            updateState { state in
-                state.editing = !state.editing
-                state.revealedPeerId = nil
-            }
-        })
+        let rightNavigationButton: ItemListNavigationButton
+        let leftNavigationButton: ItemListNavigationButton
+        if state.selecting {
+            rightNavigationButton = ItemListNavigationButton(content: .text(presentationData.strings.Common_Done), style: .bold, enabled: true, action: {
+                updateState { state in
+                    state.selecting = false
+                    state.selectedIds = []
+                }
+            })
+            leftNavigationButton = ItemListNavigationButton(content: .text(isRussian ? "Действия" : "Actions"), style: .regular, enabled: !state.selectedIds.isEmpty, action: {
+                presentGroupActionsImpl?(stateValue.with { $0.selectedIds })
+            })
+        } else {
+            rightNavigationButton = ItemListNavigationButton(content: .text(state.editing ? presentationData.strings.Common_Done : presentationData.strings.Common_Edit), style: state.editing ? .bold : .regular, enabled: true, action: {
+                updateState { state in
+                    state.editing = !state.editing
+                    state.revealedPeerId = nil
+                }
+            })
+            leftNavigationButton = ItemListNavigationButton(content: .text(isRussian ? "Выбрать" : "Select"), style: .regular, enabled: rows.count > 1, action: {
+                updateState { state in
+                    state.selecting = true
+                    state.editing = false
+                    state.revealedPeerId = nil
+                }
+            })
+        }
 
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
             title: .text(isRussian ? "Аккаунты" : "Accounts"),
-            leftNavigationButton: nil,
+            leftNavigationButton: leftNavigationButton,
             rightNavigationButton: rightNavigationButton,
             backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back)
         )
@@ -335,6 +374,98 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
     }
     pushControllerImpl = { [weak controller] c in
         controller?.push(c)
+    }
+    presentControllerImpl = { [weak controller] c in
+        controller?.present(c, in: .window(.root))
+    }
+    presentGroupActionsImpl = { selectedIds in
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        let isRussian = presentationData.strings.baseLanguageCode.hasPrefix("ru")
+        let count = selectedIds.count
+
+        // Every action here writes the same store one account at a time; there
+        // is no bulk write to get wrong, only a loop.
+        func applyToSelection(_ transform: (inout ArbigramAccountMeta) -> Void) {
+            for id in selectedIds {
+                var meta = ArbigramSettings.shared.meta(for: id)
+                transform(&meta)
+                ArbigramSettings.shared.setMeta(meta, for: id)
+            }
+            updateState { state in
+                state.metaRevision += 1
+                state.selecting = false
+                state.selectedIds = []
+            }
+        }
+
+        func applyMuted(_ muted: Bool) {
+            for id in selectedIds {
+                ArbigramSettings.shared.setAccount(id, muted: muted)
+            }
+            updateState { state in
+                state.selecting = false
+                state.selectedIds = []
+            }
+        }
+
+        var dismissActionSheetImpl: (() -> Void)?
+        var items: [ActionSheetItem] = []
+        items.append(ActionSheetTextItem(title: isRussian ? "Выбрано аккаунтов: \(count)" : "\(count) accounts selected"))
+        items.append(ActionSheetButtonItem(title: isRussian ? "Включить уведомления" : "Turn notifications on", action: {
+            dismissActionSheetImpl?()
+            applyMuted(false)
+        }))
+        items.append(ActionSheetButtonItem(title: isRussian ? "Выключить уведомления" : "Turn notifications off", action: {
+            dismissActionSheetImpl?()
+            applyMuted(true)
+        }))
+        items.append(ActionSheetButtonItem(title: isRussian ? "Закрепить" : "Pin", action: {
+            dismissActionSheetImpl?()
+            applyToSelection { $0.pinned = true }
+        }))
+        items.append(ActionSheetButtonItem(title: isRussian ? "Открепить" : "Unpin", action: {
+            dismissActionSheetImpl?()
+            applyToSelection { $0.pinned = false }
+        }))
+        // Only tags that already exist, so a bulk action never needs a keyboard.
+        for (index, tag) in ArbigramSettings.shared.knownTags.enumerated() where index < 8 {
+            items.append(ActionSheetButtonItem(title: (isRussian ? "Повесить тег #" : "Add tag #") + tag, action: {
+                dismissActionSheetImpl?()
+                applyToSelection { meta in
+                    if !meta.tags.contains(where: { $0.lowercased() == tag.lowercased() }) {
+                        meta.tags.append(tag)
+                    }
+                }
+            }))
+        }
+        items.append(ActionSheetButtonItem(title: isRussian ? "Снять все теги" : "Clear tags", action: {
+            dismissActionSheetImpl?()
+            applyToSelection { $0.tags = [] }
+        }))
+        if !ArbigramSettings.shared.secretPhrase.isEmpty {
+            items.append(ActionSheetButtonItem(title: isRussian ? "Скрыть" : "Hide", action: {
+                dismissActionSheetImpl?()
+                applyToSelection { $0.hidden = true }
+            }))
+            items.append(ActionSheetButtonItem(title: isRussian ? "Показать" : "Unhide", action: {
+                dismissActionSheetImpl?()
+                applyToSelection { $0.hidden = false }
+            }))
+        }
+
+        let actionSheet = ActionSheetController(presentationData: presentationData)
+        dismissActionSheetImpl = { [weak actionSheet] in
+            actionSheet?.dismissAnimated()
+        }
+        actionSheet.setItemGroups([
+            ActionSheetItemGroup(items: items),
+            ActionSheetItemGroup(items: [
+                ActionSheetButtonItem(title: presentationData.strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                })
+            ])
+        ])
+        presentControllerImpl?(actionSheet)
     }
 
     controller.setReorderEntry({ (fromIndex: Int, toIndex: Int, entries: [ArbigramAccountsEntry]) -> Signal<Bool, NoError> in
