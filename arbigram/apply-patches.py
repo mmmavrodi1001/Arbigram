@@ -1230,6 +1230,35 @@ patch(
     'account list: tags and colour passed',
 )
 
+# ------------------------------------------- 20. the limit that actually bites
+# maximumNumberOfAccounts is raised in AccountUtils, but the screens that decide
+# whether "Add Account" is allowed never read it — each carries its own 3 and 4.
+# Raising the constant alone changes nothing you can see.
+for accounts_gate in [
+    'submodules/SettingsUI/Sources/DeleteAccountOptionsController.swift',
+    'submodules/SettingsUI/Sources/LogoutOptionsController.swift',
+    'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoScreenSettingsActions.swift',
+]:
+    patch(
+        accounts_gate,
+        'import AccountContext\n',
+        'import AccountContext\nimport AccountUtils\n',
+        'account limit: import in %s' % accounts_gate.split('/')[-1].replace('.swift', ''),
+    )
+    patch(
+        accounts_gate,
+        'var maximumAvailableAccounts: Int = 3',
+        'var maximumAvailableAccounts: Int = maximumNumberOfAccounts // ARBIGRAM',
+        'account limit: base in %s' % accounts_gate.split('/')[-1].replace('.swift', ''),
+    )
+    patch(
+        accounts_gate,
+        'maximumAvailableAccounts = 4',
+        'maximumAvailableAccounts = maximumPremiumNumberOfAccounts // ARBIGRAM',
+        'account limit: premium in %s' % accounts_gate.split('/')[-1].replace('.swift', ''),
+        count=2,
+    )
+
 # ------------------------------------------------------------------- report
 for label, detail in APPLIED:
     print('  ok   %-38s %s' % (label, detail))
