@@ -1230,6 +1230,27 @@ patch(
     'account list: tags and colour passed',
 )
 
+# --------------------------------------------- 20. building a library alone
+# The check workflow compiles one library target rather than the app, which
+# matches neither of the two iOS conditions here and fails analysis before it
+# compiles anything. appcenter_targets is empty for this bundle id anyway.
+patch(
+    'submodules/TelegramUI/BUILD',
+    """    ] + select({
+        "@build_bazel_rules_apple//apple:ios_arm64": appcenter_targets,
+        "//build-system:ios_sim_arm64": [],
+    }),""",
+    """    ] + select({
+        "@build_bazel_rules_apple//apple:ios_arm64": appcenter_targets,
+        "//build-system:ios_sim_arm64": [],
+        # ARBIGRAM: building this library on its own, as the check workflow
+        # does, matches neither iOS condition and analysis fails outright.
+        # appcenter_targets is empty for this bundle id anyway.
+        "//conditions:default": [],
+    }),""",
+    'check: library builds on its own',
+)
+
 # ------------------------------------------------------------------- report
 for label, detail in APPLIED:
     print('  ok   %-38s %s' % (label, detail))
