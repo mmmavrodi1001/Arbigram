@@ -1,0 +1,104 @@
+name: Check Arbigram
+
+# Compiles a library target and stops. No linking, no asset catalog, no
+# signing, no packaging, no release — none of which can tell you that a
+# constant was assigned twice, which is the class of mistake this exists to
+# catch. Point it at the narrowest target that covers the edit and the answer
+# comes back in minutes instead of a full build.
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Bazel target to compile'
+        required: true
+        default: '//submodules/TelegramUI:TelegramUI'
+        type: string
+
+# Deliberately not the full build's group: a check should never wait behind a
+# build, since the whole point is to run before one.
+concurrency:
+  group: arbigram-check
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: macos-26
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out
+        uses: actions/checkout@v5
+        with:
+          submodules: 'recursive'
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          XCODE_VERSION=$(python3 -c "import json;print(json.load(open('versions.json'))['xcode'])")
+          sudo xcode-select -s "/Applications/Xcode_$XCODE_VERSION.app/Contents/Developer"
+          xcodebuild -version
+
+      # Same absolute path as the full build, so the same cache applies.
+      - name: Stage source at a stable path
+        run: |
+          sudo mkdir -p /Users/Shared
+          sudo chown -R "$(whoami)" /Users/Shared
+          cp -R "$GITHUB_WORKSPACE" /Users/Shared/
+          mv "/Users/Shared/$(basename "$GITHUB_WORKSPACE")" /Users/Shared/arbigram
+
+      # Restore only. A check reads what the last build left and does not write
+      # back, so it can never leave a half-populated cache behind a build.
+      - name: Restore bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/arbigram-bazel-cache
+          key: bazel-${{ runner.os }}-${{ hashFiles('versions.json') }}-${{ github.sha }}
+          restore-keys: |
+            bazel-${{ runner.os }}-${{ hashFiles('versions.json') }}-
+            bazel-${{ runner.os }}-
+
+      - name: Write build configuration
+        env:
+          API_ID: ${{ secrets.ARBIGRAM_API_ID }}
+          API_HASH: ${{ secrets.ARBIGRAM_API_HASH }}
+          BUNDLE_ID: ${{ secrets.ARBIGRAM_BUNDLE_ID }}
+          TEAM_ID: ${{ secrets.ARBIGRAM_TEAM_ID }}
+        run: |
+          cd /Users/Shared/arbigram
+          python3 - <<'PY'
+          import json, os
+          config = {
+              'bundle_id': os.environ['BUNDLE_ID'],
+              'api_id': os.environ['API_ID'],
+              'api_hash': os.environ['API_HASH'],
+              'team_id': os.environ['TEAM_ID'],
+              'app_center_id': '0',
+              'is_internal_build': 'true',
+              'is_appstore_build': 'false',
+              'appstore_id': '0',
+              'app_specific_url_scheme': 'tg',
+              'premium_iap_product_id': '',
+              'enable_siri': False,
+              'enable_icloud': False,
+          }
+          with open('build-system/arbigram-configuration.json', 'w') as f:
+              json.dump(config, f, indent=4)
+          PY
+
+      # A library target is never signed, but the build system still wants the
+      # directory to exist, so it gets an empty one rather than the certificate.
+      - name: Compile
+        run: |
+          cd /Users/Shared/arbigram
+          mkdir -p build-system/arbigram-codesigning/certs build-system/arbigram-codesigning/profiles
+          python3 -u build-system/Make/Make.py \
+            --cacheDir="$HOME/arbigram-bazel-cache" \
+            --bazelUserRoot=/private/var/tmp/_bazel_arbigram \
+            build \
+            --configurationPath=build-system/arbigram-configuration.json \
+            --codesigningInformationPath=build-system/arbigram-codesigning \
+            --disableProvisioningProfiles \
+            --configuration=release_arm64 \
+            --buildNumber=1 \
+            --target='${{ inputs.target }}'

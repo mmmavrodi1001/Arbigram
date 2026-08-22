@@ -16,7 +16,12 @@ import ArbigramSettings
 /// rather than through the app's own saving path.
 private func arbigramSaveFileToCameraRoll(path: String, isVideo: Bool, completion: @escaping (Bool) -> Void) {
     PHPhotoLibrary.requestAuthorization { status in
-        guard status == .authorized || status == .limited else {
+        // .limited arrived in iOS 14 and this app still targets 13.
+        var allowed = status == .authorized
+        if #available(iOS 14.0, *) {
+            allowed = allowed || status == .limited
+        }
+        guard allowed else {
             Queue.mainQueue().async {
                 completion(false)
             }
