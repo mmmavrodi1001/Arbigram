@@ -1193,12 +1193,12 @@ patch(
             synchronousLoads = true
         } else {""",
     """        if case .account = item.member {
-            itemHeight = .generic
-            // ARBIGRAM
+            // ARBIGRAM: a subtitle needs the taller row to sit in
             if let arbigramSubtitle = item.arbigramSubtitle, !arbigramSubtitle.isEmpty {
                 itemHeight = .peerList
                 itemText = .text(arbigramSubtitle, .secondary)
             } else {
+                itemHeight = .generic
                 itemText = .none
             }
             synchronousLoads = true
