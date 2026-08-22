@@ -254,12 +254,8 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             }, action: {})
         case .secretPhraseInfo:
             return ItemListTextItem(presentationData: presentationData, text: .plain(loc(presentationData.strings,
-                "Задай фразу, и в настройках аккаунта появится переключатель «Скрыть». Скрытый аккаунт исчезает отовсюду. Чтобы достать — введи фразу в поиск над списком чатов; поиск на неё не отреагирует, но скрытые вернутся до перезапуска.
-
-Эта строка сама пропадёт, как только хоть один аккаунт будет скрыт, и вернётся, когда ты их покажешь.",
-                "Set a phrase and a Hide switch appears in each account's settings. A hidden account disappears everywhere. To bring it back, type the phrase into the search above the chat list; search will not react to it, but hidden accounts return until the next launch.
-
-This row disappears once anything is hidden, and comes back when you reveal them.")), sectionId: self.section)
+                "Задай фразу, и в настройках аккаунта появится переключатель «Скрыть». Скрытый аккаунт исчезает отовсюду. Чтобы достать — введи фразу в поиск над списком чатов; поиск на неё не отреагирует, но скрытые вернутся до перезапуска.\n\nЭта строка сама пропадёт, как только хоть один аккаунт будет скрыт, и вернётся, когда ты их покажешь.",
+                "Set a phrase and a Hide switch appears in each account's settings. A hidden account disappears everywhere. To bring it back, type the phrase into the search above the chat list; search will not react to it, but hidden accounts return until the next launch.\n\nThis row disappears once anything is hidden, and comes back when you reveal them.")), sectionId: self.section)
         }
     }
 }

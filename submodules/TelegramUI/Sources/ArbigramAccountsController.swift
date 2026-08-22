@@ -471,7 +471,7 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
     controller.setReorderEntry({ (fromIndex: Int, toIndex: Int, entries: [ArbigramAccountsEntry]) -> Signal<Bool, NoError> in
         var ordered: [(id: Int64, recordId: AccountRecordId)] = []
         for entry in entries {
-            if case let .account(_, _, row, _, _, _) = entry {
+            if case let .account(_, _, row, _, _, _, _) = entry {
                 ordered.append((row.userId, row.recordId))
             }
         }
