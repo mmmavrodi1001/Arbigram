@@ -25,6 +25,7 @@ private enum ArbigramSettingsSection: Int32 {
     case copyProtection
     case contactsTab
     case secretMedia
+    case deletedMessages
     case notificationAccounts
     case accounts
     case secretPhrase
@@ -35,12 +36,14 @@ private final class ArbigramSettingsArguments {
     let openNotificationAccounts: () -> Void
     let openAccounts: () -> Void
     let setSecretPhrase: (String) -> Void
+    let openDeletedMessages: () -> Void
 
-    init(set: @escaping (ArbigramSwitch, Bool) -> Void, openNotificationAccounts: @escaping () -> Void, openAccounts: @escaping () -> Void, setSecretPhrase: @escaping (String) -> Void) {
+    init(set: @escaping (ArbigramSwitch, Bool) -> Void, openNotificationAccounts: @escaping () -> Void, openAccounts: @escaping () -> Void, setSecretPhrase: @escaping (String) -> Void, openDeletedMessages: @escaping () -> Void) {
         self.set = set
         self.openNotificationAccounts = openNotificationAccounts
         self.openAccounts = openAccounts
         self.setSecretPhrase = setSecretPhrase
+        self.openDeletedMessages = openDeletedMessages
     }
 }
 
@@ -53,6 +56,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
     case ignoreCopyProtection
     case hideContactsTab
     case saveSecretMedia
+    case keepDeletedMessages
 
     var section: ArbigramSettingsSection {
         switch self {
@@ -64,6 +68,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .ignoreCopyProtection: return .copyProtection
         case .hideContactsTab: return .contactsTab
         case .saveSecretMedia: return .secretMedia
+        case .keepDeletedMessages: return .deletedMessages
         }
     }
 
@@ -85,6 +90,8 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings, "Скрыть вкладку «Контакты»", "Hide the Contacts Tab")
         case .saveSecretMedia:
             return loc(strings, "Сохранять сгорающие медиа", "Save Self-Destructing Media")
+        case .keepDeletedMessages:
+            return loc(strings, "Сохранять удалённые сообщения", "Keep Deleted Messages")
         }
     }
 
@@ -122,6 +129,10 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings,
                        "Фото и видео с таймером сохраняются в галерею в момент открытия. Отправитель по-прежнему увидит, что ты их посмотрел — это отдельная отметка, и она уходит так же, как раньше.",
                        "Photos and videos with a timer are copied to the camera roll as they open. The sender still sees that you viewed them — that is a separate receipt and it is sent as before.")
+        case .keepDeletedMessages:
+            return loc(strings,
+                       "Когда собеседник удаляет присланное сообщение, его текст и вид вложения остаются в отдельном списке. Само сообщение из чата всё равно исчезает — трогать хранилище переписки ради этого слишком рискованно. Свои удалённые сообщения не записываются.",
+                       "When the other side deletes a message they sent you, its text and attachment kind stay in a separate list. The message still leaves the chat — rewriting the message store for this is not worth the risk. Your own deletions are not recorded.")
         }
     }
 
@@ -135,6 +146,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .ignoreCopyProtection: return settings.ignoreCopyProtection
         case .hideContactsTab: return settings.hideContactsTab
         case .saveSecretMedia: return settings.saveSecretMedia
+        case .keepDeletedMessages: return settings.keepDeletedMessages
         }
     }
 
@@ -148,6 +160,7 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .ignoreCopyProtection: ArbigramSettings.shared.ignoreCopyProtection = value
         case .hideContactsTab: ArbigramSettings.shared.hideContactsTab = value
         case .saveSecretMedia: ArbigramSettings.shared.saveSecretMedia = value
+        case .keepDeletedMessages: ArbigramSettings.shared.keepDeletedMessages = value
         }
     }
 }
@@ -158,6 +171,7 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
     case notificationAccounts(Int)
     case notificationAccountsInfo
     case accounts
+    case deletedMessages(Int)
     case secretPhrase(String)
     case secretPhraseInfo
 
@@ -171,6 +185,8 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return ArbigramSettingsSection.notificationAccounts.rawValue
         case .accounts:
             return ArbigramSettingsSection.accounts.rawValue
+        case .deletedMessages:
+            return ArbigramSettingsSection.deletedMessages.rawValue
         case .secretPhrase, .secretPhraseInfo:
             return ArbigramSettingsSection.secretPhrase.rawValue
         }
@@ -188,10 +204,12 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return 101
         case .accounts:
             return 102
-        case .secretPhrase:
+        case .deletedMessages:
             return 103
+        case .secretPhrase:
+            return 110
         case .secretPhraseInfo:
-            return 104
+            return 111
         }
     }
 
@@ -226,6 +244,10 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
             return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: loc(presentationData.strings, "Аккаунты", "Accounts"), label: "", sectionId: self.section, style: .blocks, action: {
                 arguments.openAccounts()
             })
+        case let .deletedMessages(count):
+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: loc(presentationData.strings, "Удалённые сообщения", "Deleted Messages"), label: count > 0 ? "\(count)" : "", sectionId: self.section, style: .blocks, action: {
+                arguments.openDeletedMessages()
+            })
         case let .secretPhrase(value):
             return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: ""), text: value, placeholder: loc(presentationData.strings, "Фраза для скрытых аккаунтов", "Phrase for hidden accounts"), type: .regular(capitalization: false, autocorrection: false), clearType: .always, sectionId: self.section, textUpdated: { value in
                 arguments.setSecretPhrase(value)
@@ -251,6 +273,8 @@ private struct ArbigramSettingsState: Equatable {
     var ignoreCopyProtection: Bool
     var hideContactsTab: Bool
     var saveSecretMedia: Bool
+    var keepDeletedMessages: Bool
+    var deletedMessageCount: Int
     var mutedAccountCount: Int
     var secretPhrase: String
     var hasHiddenAccounts: Bool
@@ -266,6 +290,8 @@ private struct ArbigramSettingsState: Equatable {
         self.ignoreCopyProtection = settings.ignoreCopyProtection
         self.hideContactsTab = settings.hideContactsTab
         self.saveSecretMedia = settings.saveSecretMedia
+        self.keepDeletedMessages = settings.keepDeletedMessages
+        self.deletedMessageCount = settings.deletedMessages.count
         self.mutedAccountCount = settings.mutedAccountIds.count
         self.secretPhrase = settings.secretPhrase
         self.hasHiddenAccounts = settings.hasHiddenAccounts
@@ -291,6 +317,8 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
     }, setSecretPhrase: { value in
         ArbigramSettings.shared.secretPhrase = value
         statePromise.set(ArbigramSettingsState())
+    }, openDeletedMessages: {
+        pushControllerImpl?(arbigramDeletedMessagesController(context: context))
     })
 
     let signal = combineLatest(context.sharedContext.presentationData, statePromise.get())
@@ -304,6 +332,9 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
         entries.append(.notificationAccounts(state.mutedAccountCount))
         entries.append(.notificationAccountsInfo)
         entries.append(.accounts)
+        if state.keepDeletedMessages || state.deletedMessageCount > 0 {
+            entries.append(.deletedMessages(state.deletedMessageCount))
+        }
         // The row is its own tell: once something is hidden it goes away, so a
         // stranger sees no sign the feature is even configured.
         if !state.hasHiddenAccounts || state.hiddenRevealed {

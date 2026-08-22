@@ -1066,6 +1066,31 @@ patch(
     'secret media: saved on open',
 )
 
+# ------------------------------------------------- 18. deleted messages
+# Copied out before the postbox drops them. Keeping the message in place would
+# mean a tombstone the whole app has to understand — unread counts, replies,
+# history cleanup, search — and getting any of that wrong breaks chats that
+# work today. The copy answers the question actually being asked.
+patch(
+    'submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift',
+    """            case let .DeleteMessagesWithGlobalIds(ids):
+                var resourceIds: [MediaResourceId] = []""",
+    """            case let .DeleteMessagesWithGlobalIds(ids):
+                arbigramRecordDeletedMessagesWithGlobalIds(transaction: transaction, globalIds: ids) // ARBIGRAM
+                var resourceIds: [MediaResourceId] = []""",
+    'deleted messages: global id path',
+)
+
+patch(
+    'submodules/TelegramCore/Sources/State/AccountStateManagementUtils.swift',
+    """            case let .DeleteMessages(ids):
+                _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in""",
+    """            case let .DeleteMessages(ids):
+                arbigramRecordDeletedMessages(transaction: transaction, ids: ids) // ARBIGRAM
+                _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in""",
+    'deleted messages: message id path',
+)
+
 # ------------------------------------------------------------------- report
 for label, detail in APPLIED:
     print('  ok   %-38s %s' % (label, detail))
