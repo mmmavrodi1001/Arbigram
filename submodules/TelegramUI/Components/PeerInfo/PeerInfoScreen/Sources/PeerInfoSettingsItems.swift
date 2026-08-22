@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import Display
 import AccountContext
+import ArbigramSettings
 import TelegramPresentationData
 import TelegramCore
 import PhoneNumberFormat
@@ -128,7 +129,15 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
                     }
                 ))
                 let member: PeerInfoMember = .account(peer: EngineRenderedPeer(peer: peer))
-                items[.accounts]!.append(PeerInfoScreenMemberItem(id: member.id, context: mappedContext, enclosingPeer: nil, member: member, badge: badgeCount > 0 ? "\(compactNumericCountString(Int(badgeCount), decimalSeparator: presentationData.dateTimeFormat.decimalSeparator))" : nil, isAccount: true, action: { action in
+                // ARBIGRAM: tags and colour, so the list you actually switch
+                // accounts from carries them too
+                let arbigramMeta = ArbigramSettings.shared.meta(for: peerAccountContext.account.peerId.id._internalGetInt64Value())
+                let arbigramSubtitle = arbigramMeta.tags.map({ "#" + $0 }).joined(separator: " ")
+                var arbigramColor: UIColor?
+                if arbigramMeta.colorIndex >= 0 && arbigramMeta.colorIndex < ArbigramAccountMeta.palette.count {
+                    arbigramColor = UIColor(rgb: ArbigramAccountMeta.palette[arbigramMeta.colorIndex])
+                }
+                items[.accounts]!.append(PeerInfoScreenMemberItem(id: member.id, context: mappedContext, enclosingPeer: nil, member: member, badge: badgeCount > 0 ? "\(compactNumericCountString(Int(badgeCount), decimalSeparator: presentationData.dateTimeFormat.decimalSeparator))" : nil, isAccount: true, arbigramSubtitle: arbigramSubtitle, arbigramColor: arbigramColor, action: { action in
                     switch action {
                     case .open:
                         interaction.switchToAccount(peerAccountContext.account.id)

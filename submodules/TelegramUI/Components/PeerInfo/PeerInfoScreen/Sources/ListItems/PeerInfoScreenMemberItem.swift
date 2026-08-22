@@ -6,6 +6,7 @@ import TelegramPresentationData
 import ItemListPeerItem
 import SwiftSignalKit
 import AccountContext
+import ArbigramSettings
 import TelegramCore
 import ItemListUI
 
@@ -23,6 +24,10 @@ final class PeerInfoScreenMemberItem: PeerInfoScreenItem {
     let member: PeerInfoMember
     let badge: String?
     let isAccount: Bool
+    /// ARBIGRAM: the account's own tags, shown under the name.
+    let arbigramSubtitle: String?
+    /// ARBIGRAM: the colour picked for the account, carried by the badge.
+    let arbigramColor: UIColor?
     let action: ((PeerInfoScreenMemberItemAction) -> Void)?
     let contextAction: ((ASDisplayNode, ContextGesture?) -> Void)?
     let openStories: ((UIView) -> Void)?
@@ -34,6 +39,8 @@ final class PeerInfoScreenMemberItem: PeerInfoScreenItem {
         member: PeerInfoMember,
         badge: String? = nil,
         isAccount: Bool,
+        arbigramSubtitle: String? = nil,
+        arbigramColor: UIColor? = nil,
         action: ((PeerInfoScreenMemberItemAction) -> Void)?,
         contextAction: ((ASDisplayNode, ContextGesture?) -> Void)? = nil,
         openStories: ((UIView) -> Void)? = nil
@@ -44,6 +51,8 @@ final class PeerInfoScreenMemberItem: PeerInfoScreenItem {
         self.member = member
         self.badge = badge
         self.isAccount = isAccount
+        self.arbigramSubtitle = arbigramSubtitle
+        self.arbigramColor = arbigramColor
         self.action = action
         self.contextAction = contextAction
         self.openStories = openStories
@@ -202,7 +211,15 @@ private final class PeerInfoScreenMemberItemNode: PeerInfoScreenItemNode {
         if let label = label {
             itemLabel = .text(label, .standard, labelColor, labelBackground)
         } else if let badge = item.badge {
-            itemLabel = .badge(badge)
+            // ARBIGRAM: an unread badge in the account's own colour reads as
+            // both at once, which is the point of giving it a colour.
+            if let arbigramColor = item.arbigramColor {
+                itemLabel = .badge(badge, arbigramColor)
+            } else {
+                itemLabel = .badge(badge)
+            }
+        } else if let arbigramColor = item.arbigramColor {
+            itemLabel = .badge("  ", arbigramColor) // ARBIGRAM
         } else {
             itemLabel = .none
         }
@@ -212,7 +229,13 @@ private final class PeerInfoScreenMemberItemNode: PeerInfoScreenItemNode {
         var synchronousLoads = false
         if case .account = item.member {
             itemHeight = .generic
-            itemText = .none
+            // ARBIGRAM
+            if let arbigramSubtitle = item.arbigramSubtitle, !arbigramSubtitle.isEmpty {
+                itemHeight = .peerList
+                itemText = .text(arbigramSubtitle, .secondary)
+            } else {
+                itemText = .none
+            }
             synchronousLoads = true
         } else {
             itemHeight = .peerList

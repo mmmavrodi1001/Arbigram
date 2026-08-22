@@ -738,14 +738,14 @@ THEME_LIST_OLD = """        var defaultThemes: [PresentationThemeReference] = []
 
 THEME_LIST_NEW = """        var defaultThemes: [PresentationThemeReference] = []
         // ARBIGRAM: the fork's own themes, listed alongside the builtin ones.
-        // Without this a local theme only appears while it is the active one.
+        // Without this a local theme only appears while it is the active one,
+        // and all of them are listed in both modes — night mode reorders them,
+        // it does not make the light ones unreachable.
+        defaultThemes.append(contentsOf: ArbigramTheme.ordered(nightMode: presentationData.autoNightModeTriggered).map { $0.reference })
         if presentationData.autoNightModeTriggered {
-            defaultThemes.append(ArbigramTheme.midnight.reference)
             defaultThemes.append(contentsOf: [.builtin(.nightAccent), .builtin(.night)])
         } else {
             defaultThemes.append(contentsOf: [
-                ArbigramTheme.violet.reference,
-                ArbigramTheme.midnight.reference,
                 .builtin(.dayClassic),
                 .builtin(.nightAccent),
                 .builtin(.day),
@@ -1005,7 +1005,10 @@ patch(
             var accountRecords: [(AccountContext, EnginePeer, Int32)] = (includePrimary ? accounts : accounts.filter({ $0?.0.account.id != primary?.account.id })).compactMap({ $0 })
             // ARBIGRAM: the account in use is never hidden from itself — you
             // would be looking at a switcher that cannot show where you are.
-            if !includeHidden && !hiddenRevealed {
+            // ARBIGRAM: with no phrase there is no way back, so hiding is
+            // inactive rather than permanent. Clearing the phrase reveals
+            // everything instead of stranding it.
+            if !includeHidden && !hiddenRevealed && !ArbigramSettings.shared.secretPhrase.isEmpty {
                 let meta = ArbigramSettings.shared.accountMeta
                 accountRecords = accountRecords.filter { entry in
                     if entry.0.account.id == primary?.account.id {
@@ -1092,7 +1095,7 @@ patch(
     """            case let .DeleteMessagesWithGlobalIds(ids):
                 var resourceIds: [MediaResourceId] = []""",
     """            case let .DeleteMessagesWithGlobalIds(ids):
-                arbigramRecordDeletedMessagesWithGlobalIds(transaction: transaction, globalIds: ids) // ARBIGRAM
+                arbigramRecordDeletedMessagesWithGlobalIds(transaction: transaction, mediaBox: mediaBox, globalIds: ids) // ARBIGRAM
                 var resourceIds: [MediaResourceId] = []""",
     'deleted messages: global id path',
 )
@@ -1102,9 +1105,129 @@ patch(
     """            case let .DeleteMessages(ids):
                 _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in""",
     """            case let .DeleteMessages(ids):
-                arbigramRecordDeletedMessages(transaction: transaction, ids: ids) // ARBIGRAM
+                arbigramRecordDeletedMessages(transaction: transaction, mediaBox: mediaBox, ids: ids) // ARBIGRAM
                 _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in""",
     'deleted messages: message id path',
+)
+
+# ------------------------------------- 19. tags and colour in the account list
+# The list you actually switch accounts from is the one in Settings, so that is
+# where the tags and the colour have to show up.
+MEMBER_ITEM = 'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/ListItems/PeerInfoScreenMemberItem.swift'
+patch(
+    MEMBER_ITEM,
+    'import AccountContext\n',
+    'import AccountContext\nimport ArbigramSettings\n',
+    'account list: member item import',
+)
+
+patch(
+    MEMBER_ITEM,
+    """    let badge: String?
+    let isAccount: Bool""",
+    """    let badge: String?
+    let isAccount: Bool
+    /// ARBIGRAM: the account's own tags, shown under the name.
+    let arbigramSubtitle: String?
+    /// ARBIGRAM: the colour picked for the account, carried by the badge.
+    let arbigramColor: UIColor?""",
+    'account list: member item fields',
+)
+
+patch(
+    MEMBER_ITEM,
+    """        badge: String? = nil,
+        isAccount: Bool,""",
+    """        badge: String? = nil,
+        isAccount: Bool,
+        arbigramSubtitle: String? = nil,
+        arbigramColor: UIColor? = nil,""",
+    'account list: member item parameters',
+)
+
+patch(
+    MEMBER_ITEM,
+    """        self.badge = badge
+        self.isAccount = isAccount""",
+    """        self.badge = badge
+        self.isAccount = isAccount
+        self.arbigramSubtitle = arbigramSubtitle
+        self.arbigramColor = arbigramColor""",
+    'account list: member item stored',
+)
+
+patch(
+    MEMBER_ITEM,
+    """        let itemLabel: ItemListPeerItemLabel
+        if let label = label {
+            itemLabel = .text(label, .standard, labelColor, labelBackground)
+        } else if let badge = item.badge {
+            itemLabel = .badge(badge)
+        } else {
+            itemLabel = .none
+        }""",
+    """        let itemLabel: ItemListPeerItemLabel
+        if let label = label {
+            itemLabel = .text(label, .standard, labelColor, labelBackground)
+        } else if let badge = item.badge {
+            // ARBIGRAM: an unread badge in the account's own colour reads as
+            // both at once, which is the point of giving it a colour.
+            if let arbigramColor = item.arbigramColor {
+                itemLabel = .badge(badge, arbigramColor)
+            } else {
+                itemLabel = .badge(badge)
+            }
+        } else if let arbigramColor = item.arbigramColor {
+            itemLabel = .badge("  ", arbigramColor) // ARBIGRAM
+        } else {
+            itemLabel = .none
+        }""",
+    'account list: colour on the badge',
+)
+
+patch(
+    MEMBER_ITEM,
+    """        if case .account = item.member {
+            itemHeight = .generic
+            itemText = .none
+            synchronousLoads = true
+        } else {""",
+    """        if case .account = item.member {
+            itemHeight = .generic
+            // ARBIGRAM
+            if let arbigramSubtitle = item.arbigramSubtitle, !arbigramSubtitle.isEmpty {
+                itemHeight = .peerList
+                itemText = .text(arbigramSubtitle, .secondary)
+            } else {
+                itemText = .none
+            }
+            synchronousLoads = true
+        } else {""",
+    'account list: tags under the name',
+)
+
+patch(
+    'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift',
+    'import AccountContext\n',
+    'import AccountContext\nimport ArbigramSettings\n',
+    'account list: settings items import',
+)
+
+patch(
+    'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift',
+    """                let member: PeerInfoMember = .account(peer: EngineRenderedPeer(peer: peer))
+                items[.accounts]!.append(PeerInfoScreenMemberItem(id: member.id, context: mappedContext, enclosingPeer: nil, member: member, badge: badgeCount > 0 ? "\(compactNumericCountString(Int(badgeCount), decimalSeparator: presentationData.dateTimeFormat.decimalSeparator))" : nil, isAccount: true, action: { action in""",
+    """                let member: PeerInfoMember = .account(peer: EngineRenderedPeer(peer: peer))
+                // ARBIGRAM: tags and colour, so the list you actually switch
+                // accounts from carries them too
+                let arbigramMeta = ArbigramSettings.shared.meta(for: peerAccountContext.account.peerId.id._internalGetInt64Value())
+                let arbigramSubtitle = arbigramMeta.tags.map({ "#" + $0 }).joined(separator: " ")
+                var arbigramColor: UIColor?
+                if arbigramMeta.colorIndex >= 0 && arbigramMeta.colorIndex < ArbigramAccountMeta.palette.count {
+                    arbigramColor = UIColor(rgb: ArbigramAccountMeta.palette[arbigramMeta.colorIndex])
+                }
+                items[.accounts]!.append(PeerInfoScreenMemberItem(id: member.id, context: mappedContext, enclosingPeer: nil, member: member, badge: badgeCount > 0 ? "\(compactNumericCountString(Int(badgeCount), decimalSeparator: presentationData.dateTimeFormat.decimalSeparator))" : nil, isAccount: true, arbigramSubtitle: arbigramSubtitle, arbigramColor: arbigramColor, action: { action in""",
+    'account list: tags and colour passed',
 )
 
 # ------------------------------------------------------------------- report

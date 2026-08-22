@@ -64,7 +64,10 @@ public func activeAccountsAndPeers(context: AccountContext, includePrimary: Bool
             var accountRecords: [(AccountContext, EnginePeer, Int32)] = (includePrimary ? accounts : accounts.filter({ $0?.0.account.id != primary?.account.id })).compactMap({ $0 })
             // ARBIGRAM: the account in use is never hidden from itself — you
             // would be looking at a switcher that cannot show where you are.
-            if !includeHidden && !hiddenRevealed {
+            // ARBIGRAM: with no phrase there is no way back, so hiding is
+            // inactive rather than permanent. Clearing the phrase reveals
+            // everything instead of stranding it.
+            if !includeHidden && !hiddenRevealed && !ArbigramSettings.shared.secretPhrase.isEmpty {
                 let meta = ArbigramSettings.shared.accountMeta
                 accountRecords = accountRecords.filter { entry in
                     if entry.0.account.id == primary?.account.id {

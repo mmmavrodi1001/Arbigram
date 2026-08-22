@@ -12,7 +12,7 @@ import ArbigramCore
 ///
 /// Only incoming messages are recorded. Deleting your own message is a decision
 /// you made, and logging it would turn a fork feature into a hoarder.
-func arbigramRecordDeletedMessages(transaction: Transaction, ids: [MessageId]) {
+func arbigramRecordDeletedMessages(transaction: Transaction, mediaBox: MediaBox, ids: [MessageId]) {
     if !ArbigramCoreSettings.shared.keepDeletedMessages {
         return
     }
@@ -29,9 +29,14 @@ func arbigramRecordDeletedMessages(transaction: Transaction, ids: [MessageId]) {
         }
 
         var mediaKind = ""
+        var mediaResource: MediaResource?
+        var mediaExtension = "dat"
+
         for media in message.media {
-            if media is TelegramMediaImage {
+            if let image = media as? TelegramMediaImage {
                 mediaKind = "photo"
+                mediaResource = image.representations.last?.resource
+                mediaExtension = "jpg"
             } else if let file = media as? TelegramMediaFile {
                 if file.isVoice {
                     mediaKind = "voice"
@@ -43,6 +48,12 @@ func arbigramRecordDeletedMessages(transaction: Transaction, ids: [MessageId]) {
                     mediaKind = "sticker"
                 } else {
                     mediaKind = "file"
+                }
+                mediaResource = file.resource
+                if let fileName = file.fileName, !(fileName as NSString).pathExtension.isEmpty {
+                    mediaExtension = (fileName as NSString).pathExtension
+                } else {
+                    mediaExtension = arbigramExtension(forMimeType: file.mimeType)
                 }
             } else if media is TelegramMediaContact {
                 mediaKind = "contact"
@@ -59,6 +70,21 @@ func arbigramRecordDeletedMessages(transaction: Transaction, ids: [MessageId]) {
             continue
         }
 
+        // The file is only there if it was downloaded before the delete
+        // arrived. Nothing is fetched here — a deletion is the wrong moment to
+        // start pulling bytes off the network for a message that is going away.
+        var mediaFile: String?
+        if let mediaResource,
+           let sourcePath = mediaBox.completedResourcePath(mediaResource),
+           let directory = ArbigramCoreSettings.shared.deletedMediaDirectory {
+            let name = "\(id.peerId.id._internalGetInt64Value())_\(id.id)_\(now).\(mediaExtension)"
+            let destination = directory.appendingPathComponent(name)
+            try? FileManager.default.removeItem(at: destination)
+            if (try? FileManager.default.copyItem(atPath: sourcePath, toPath: destination.path)) != nil {
+                mediaFile = name
+            }
+        }
+
         let chatTitle = transaction.getPeer(id.peerId)?.debugDisplayTitle ?? ""
         var authorTitle = ""
         if let authorId = message.author?.id, authorId != id.peerId {
@@ -72,7 +98,8 @@ func arbigramRecordDeletedMessages(transaction: Transaction, ids: [MessageId]) {
             text: message.text,
             mediaKind: mediaKind,
             timestamp: message.timestamp,
-            deletedAt: now
+            deletedAt: now,
+            mediaFile: mediaFile
         ))
     }
 
@@ -82,9 +109,36 @@ func arbigramRecordDeletedMessages(transaction: Transaction, ids: [MessageId]) {
 }
 
 /// The global-id variants of the same updates never name a message directly.
-func arbigramRecordDeletedMessagesWithGlobalIds(transaction: Transaction, globalIds: [Int32]) {
+func arbigramRecordDeletedMessagesWithGlobalIds(transaction: Transaction, mediaBox: MediaBox, globalIds: [Int32]) {
     if !ArbigramCoreSettings.shared.keepDeletedMessages {
         return
     }
-    arbigramRecordDeletedMessages(transaction: transaction, ids: transaction.messageIdsForGlobalIds(globalIds))
+    arbigramRecordDeletedMessages(transaction: transaction, mediaBox: mediaBox, ids: transaction.messageIdsForGlobalIds(globalIds))
+}
+
+private func arbigramExtension(forMimeType mimeType: String) -> String {
+    switch mimeType {
+    case "image/jpeg":
+        return "jpg"
+    case "image/png":
+        return "png"
+    case "image/gif":
+        return "gif"
+    case "image/webp":
+        return "webp"
+    case "video/mp4":
+        return "mp4"
+    case "video/quicktime":
+        return "mov"
+    case "audio/ogg":
+        return "ogg"
+    case "audio/mpeg":
+        return "mp3"
+    case "audio/mp4":
+        return "m4a"
+    case "application/pdf":
+        return "pdf"
+    default:
+        return "dat"
+    }
 }

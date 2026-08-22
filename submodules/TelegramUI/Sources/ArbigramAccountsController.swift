@@ -148,14 +148,21 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
                 }
             ))
 
-            var subtitle = row.meta.tags.map({ "#" + $0 }).joined(separator: " ")
-            if !row.meta.note.isEmpty {
-                subtitle = subtitle.isEmpty ? row.meta.note : subtitle + " · " + row.meta.note
-            }
+            let subtitle = row.meta.tags.map({ "#" + $0 }).joined(separator: " ")
 
-            var customAvatarIcon: UIImage?
+            // The colour rides the badge: customAvatarIcon replaces the avatar
+            // outright, which trades a photo for a dot — a bad deal.
+            var accountColor: UIColor?
             if row.meta.colorIndex >= 0 && row.meta.colorIndex < ArbigramAccountMeta.palette.count {
-                customAvatarIcon = arbigramColorDot(UIColor(rgb: ArbigramAccountMeta.palette[row.meta.colorIndex]))
+                accountColor = UIColor(rgb: ArbigramAccountMeta.palette[row.meta.colorIndex])
+            }
+            let label: ItemListPeerItemLabel
+            if row.unreadCount > 0 {
+                label = .badge("\(row.unreadCount)", accountColor ?? presentationData.theme.list.itemAccentColor)
+            } else if let accountColor {
+                label = .badge("  ", accountColor)
+            } else {
+                label = .none
             }
 
             let pinTitle = presentationData.strings.baseLanguageCode.hasPrefix("ru")
@@ -169,10 +176,9 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
                 nameDisplayOrder: .firstLast,
                 context: itemContext,
                 peer: row.peer,
-                customAvatarIcon: customAvatarIcon,
                 presence: nil,
                 text: subtitle.isEmpty ? .none : .text(subtitle, .secondary),
-                label: row.unreadCount > 0 ? .badge("\(row.unreadCount)") : .none,
+                label: label,
                 editing: ItemListPeerItemEditing(editable: true, editing: editing, canBeReordered: true, revealed: revealed),
                 revealOptions: ItemListPeerItemRevealOptions(options: [
                     ItemListPeerItemRevealOption(type: .neutral, title: pinTitle, action: {
@@ -198,22 +204,6 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
             )
         }
     }
-}
-
-/// A filled circle the size of the avatar badge, used to tell accounts apart at
-/// a glance without an extra row of chrome.
-private func arbigramColorDot(_ color: UIColor) -> UIImage? {
-    let size = CGSize(width: 12.0, height: 12.0)
-    UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
-    defer {
-        UIGraphicsEndImageContext()
-    }
-    guard let context = UIGraphicsGetCurrentContext() else {
-        return nil
-    }
-    context.setFillColor(color.cgColor)
-    context.fillEllipse(in: CGRect(origin: CGPoint(), size: size))
-    return UIGraphicsGetImageFromCurrentImageContext()
 }
 
 private struct ArbigramAccountsState: Equatable {
@@ -319,8 +309,8 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
             index += 1
         }
         entries.append(.info(isRussian
-            ? "Потяни за строку, чтобы поменять порядок — он станет общим для всего приложения. Смахни влево, чтобы закрепить. Нажми на аккаунт, чтобы задать цвет, теги и заметку."
-            : "Drag a row to change the order — it becomes the app's own. Swipe left to pin. Tap an account to give it a colour, tags and a note."))
+            ? "Потяни за строку, чтобы поменять порядок — он станет общим для всего приложения. Смахни влево, чтобы закрепить. Нажми на аккаунт, чтобы задать цвет и теги."
+            : "Drag a row to change the order — it becomes the app's own. Swipe left to pin. Tap an account to give it a colour and tags."))
 
         let rightNavigationButton: ItemListNavigationButton
         let leftNavigationButton: ItemListNavigationButton
@@ -496,7 +486,6 @@ private enum ArbigramAccountDetailSection: Int32 {
     case hidden
     case color
     case tags
-    case note
 }
 
 private final class ArbigramAccountDetailArguments {
@@ -504,14 +493,12 @@ private final class ArbigramAccountDetailArguments {
     let setHidden: (Bool) -> Void
     let setColor: (Int) -> Void
     let setTags: (String) -> Void
-    let setNote: (String) -> Void
 
-    init(setPinned: @escaping (Bool) -> Void, setHidden: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, setTags: @escaping (String) -> Void, setNote: @escaping (String) -> Void) {
+    init(setPinned: @escaping (Bool) -> Void, setHidden: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, setTags: @escaping (String) -> Void) {
         self.setPinned = setPinned
         self.setHidden = setHidden
         self.setColor = setColor
         self.setTags = setTags
-        self.setNote = setNote
     }
 }
 
@@ -524,8 +511,6 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
     case tagsHeader(String)
     case tags(String, String)
     case tagsInfo(String)
-    case noteHeader(String)
-    case note(String, String)
 
     var section: ItemListSectionId {
         switch self {
@@ -537,8 +522,6 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
             return ArbigramAccountDetailSection.color.rawValue
         case .tagsHeader, .tags, .tagsInfo:
             return ArbigramAccountDetailSection.tags.rawValue
-        case .noteHeader, .note:
-            return ArbigramAccountDetailSection.note.rawValue
         }
     }
 
@@ -560,10 +543,6 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
             return 101
         case .tagsInfo:
             return 102
-        case .noteHeader:
-            return 200
-        case .note:
-            return 201
         }
     }
 
@@ -584,7 +563,7 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
             })
         case let .hiddenInfo(text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
-        case let .colorHeader(text), let .tagsHeader(text), let .noteHeader(text):
+        case let .colorHeader(text), let .tagsHeader(text):
             return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
         case let .color(index, title, selected):
             return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: title, style: .right, checked: selected, zeroSeparatorInsets: false, sectionId: self.section, action: {
@@ -596,10 +575,6 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
             }, action: {})
         case let .tagsInfo(text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
-        case let .note(placeholder, value):
-            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: ""), text: value, placeholder: placeholder, sectionId: self.section, textUpdated: { value in
-                arguments.setNote(value)
-            }, action: {})
         }
     }
 }
@@ -639,8 +614,6 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
         }
-    }, setNote: { text in
-        updateState { $0.meta.note = text }
     })
 
     let colorNamesRu = ["Красный", "Оранжевый", "Жёлтый", "Зелёный", "Бирюзовый", "Синий", "Фиолетовый", "Розовый"]
@@ -666,10 +639,8 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
         entries.append(.tagsHeader(isRussian ? "ТЕГИ" : "TAGS"))
         entries.append(.tags(isRussian ? "байер, гео RU, прогрев" : "buyer, geo RU, warmup", state.tagsText))
         entries.append(.tagsInfo(isRussian
-            ? "Через запятую. Теги видно в списке аккаунтов под именем."
-            : "Comma separated. Tags show under the name in the account list."))
-        entries.append(.noteHeader(isRussian ? "ЗАМЕТКА" : "NOTE"))
-        entries.append(.note(isRussian ? "Для чего этот аккаунт" : "What this account is for", state.meta.note))
+            ? "Через запятую. Видно под именем — и здесь, и в списке аккаунтов в настройках."
+            : "Comma separated. Shown under the name here and in the settings account list."))
 
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),

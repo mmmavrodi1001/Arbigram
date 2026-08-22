@@ -12,16 +12,14 @@ public struct ArbigramAccountMeta: Codable, Equatable {
     public var colorIndex: Int
     public var pinned: Bool
     public var tags: [String]
-    public var note: String
     /// Absent from every list until the phrase is typed. Decoded with a default
     /// so metadata written before this existed still reads.
     public var hidden: Bool
 
-    public init(colorIndex: Int = -1, pinned: Bool = false, tags: [String] = [], note: String = "", hidden: Bool = false) {
+    public init(colorIndex: Int = -1, pinned: Bool = false, tags: [String] = [], hidden: Bool = false) {
         self.colorIndex = colorIndex
         self.pinned = pinned
         self.tags = tags
-        self.note = note
         self.hidden = hidden
     }
 
@@ -30,7 +28,6 @@ public struct ArbigramAccountMeta: Codable, Equatable {
         self.colorIndex = try container.decodeIfPresent(Int.self, forKey: .colorIndex) ?? -1
         self.pinned = try container.decodeIfPresent(Bool.self, forKey: .pinned) ?? false
         self.tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
-        self.note = try container.decodeIfPresent(String.self, forKey: .note) ?? ""
         self.hidden = try container.decodeIfPresent(Bool.self, forKey: .hidden) ?? false
     }
 
@@ -288,7 +285,7 @@ public final class ArbigramSettings {
         all[id] = meta
         self.accountMeta = all
         // Only hiding changes what other screens show, and these setters run on
-        // every keystroke of the note and tag fields — so the rest stays quiet.
+        // every keystroke of the tag field — so the rest stays quiet.
         if previous.hidden != meta.hidden {
             NotificationCenter.default.post(name: ArbigramSettings.changedNotification, object: nil)
         }

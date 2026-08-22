@@ -10,8 +10,12 @@ public struct ArbigramDeletedMessage: Codable, Equatable {
     public var mediaKind: String
     public var timestamp: Int32
     public var deletedAt: Int32
+    /// File name inside the deleted-media folder, when the attachment was
+    /// copied out in time. Just the name — the container path moves between
+    /// installs, so an absolute path stored here would go stale.
+    public var mediaFile: String?
 
-    public init(chatId: Int64, chatTitle: String, authorTitle: String, text: String, mediaKind: String, timestamp: Int32, deletedAt: Int32) {
+    public init(chatId: Int64, chatTitle: String, authorTitle: String, text: String, mediaKind: String, timestamp: Int32, deletedAt: Int32, mediaFile: String? = nil) {
         self.chatId = chatId
         self.chatTitle = chatTitle
         self.authorTitle = authorTitle
@@ -19,6 +23,7 @@ public struct ArbigramDeletedMessage: Codable, Equatable {
         self.mediaKind = mediaKind
         self.timestamp = timestamp
         self.deletedAt = deletedAt
+        self.mediaFile = mediaFile
     }
 }
 
@@ -106,6 +111,23 @@ public final class ArbigramCoreSettings {
         return decoded
     }
 
+    /// Where copied-out attachments live. In the shared container so the
+    /// files survive as long as the records that name them.
+    public var deletedMediaDirectory: URL? {
+        guard let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: ArbigramCoreSettings.appGroupName) else {
+            return nil
+        }
+        let directory = container.appendingPathComponent("arbigram-deleted", isDirectory: true)
+        if !FileManager.default.fileExists(atPath: directory.path) {
+            try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        return directory
+    }
+
+    public func deletedMediaPath(_ name: String) -> String? {
+        return self.deletedMediaDirectory?.appendingPathComponent(name).path
+    }
+
     public func appendDeletedMessages(_ records: [ArbigramDeletedMessage]) {
         if records.isEmpty {
             return
@@ -113,6 +135,14 @@ public final class ArbigramCoreSettings {
         var all = self.deletedMessages
         all.append(contentsOf: records)
         if all.count > ArbigramCoreSettings.deletedMessagesLimit {
+            // Dropping a record has to drop its file too, or the folder grows
+            // for ever behind a list that is capped.
+            let dropped = all.prefix(all.count - ArbigramCoreSettings.deletedMessagesLimit)
+            for record in dropped {
+                if let name = record.mediaFile, let path = self.deletedMediaPath(name) {
+                    try? FileManager.default.removeItem(atPath: path)
+                }
+            }
             all.removeFirst(all.count - ArbigramCoreSettings.deletedMessagesLimit)
         }
         if let data = try? JSONEncoder().encode(all) {
@@ -121,6 +151,11 @@ public final class ArbigramCoreSettings {
     }
 
     public func clearDeletedMessages() {
+        for record in self.deletedMessages {
+            if let name = record.mediaFile, let path = self.deletedMediaPath(name) {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+        }
         self.defaults.removeObject(forKey: ArbigramCoreSettings.deletedMessagesKey)
     }
 

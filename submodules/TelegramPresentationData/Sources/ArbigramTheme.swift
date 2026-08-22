@@ -13,13 +13,15 @@ import TelegramUIPreferences
 /// a local theme already carries every colour the app draws with, plus a name of
 /// its own in the picker.
 ///
-/// Both are written to the account manager's media box under fixed resource ids.
+/// Each is written to the account manager's media box under a fixed resource id.
 /// Fixed, because a local theme is addressed by its resource: a random id would
 /// mean a new theme on every launch, piling up in the picker, and the reference
 /// the picker lists could not be reconstructed without storing it somewhere.
 public enum ArbigramTheme: CaseIterable {
     case violet
     case midnight
+    case sand
+    case ocean
 
     public var title: String {
         switch self {
@@ -27,6 +29,10 @@ public enum ArbigramTheme: CaseIterable {
             return "Arbigram Violet"
         case .midnight:
             return "Arbigram Midnight"
+        case .sand:
+            return "Arbigram Sand"
+        case .ocean:
+            return "Arbigram Ocean"
         }
     }
 
@@ -37,14 +43,18 @@ public enum ArbigramTheme: CaseIterable {
             return 7331002026080801
         case .midnight:
             return 7331002026080802
+        case .sand:
+            return 7331002026080803
+        case .ocean:
+            return 7331002026080804
         }
     }
 
     public var isDark: Bool {
         switch self {
-        case .violet:
+        case .violet, .sand:
             return false
-        case .midnight:
+        case .midnight, .ocean:
             return true
         }
     }
@@ -57,6 +67,10 @@ public enum ArbigramTheme: CaseIterable {
             // Negative intensity puts the pattern under a dark gradient rather
             // than over a light one.
             return defaultBuiltinWallpaper(data: .variant14, colors: [0x241a45, 0x4a3a8c, 0x2f2456, 0x5b3fd6], intensity: -40, rotation: nil)
+        case .sand:
+            return defaultBuiltinWallpaper(data: .variant12, colors: [0xf6e4c8, 0xeeb98a, 0xf3d1a8, 0xe6a178], intensity: 50, rotation: nil)
+        case .ocean:
+            return defaultBuiltinWallpaper(data: .variant3, colors: [0x0e2233, 0x14425c, 0x102f45, 0x0f5a6e], intensity: -40, rotation: nil)
         }
     }
 
@@ -66,6 +80,10 @@ public enum ArbigramTheme: CaseIterable {
             return UIColor(rgb: 0x6c4cf1)
         case .midnight:
             return UIColor(rgb: 0x8b6dff)
+        case .sand:
+            return UIColor(rgb: 0xc2703a)
+        case .ocean:
+            return UIColor(rgb: 0x3fc3d8)
         }
     }
 
@@ -75,6 +93,10 @@ public enum ArbigramTheme: CaseIterable {
             return [0xe6dcff, 0xf2ebff]
         case .midnight:
             return [0x8b6dff, 0x6c4cf1]
+        case .sand:
+            return [0xffe3bd, 0xfff3e0]
+        case .ocean:
+            return [0x2fa8bd, 0x1d6d8c]
         }
     }
 
@@ -108,6 +130,16 @@ public enum ArbigramTheme: CaseIterable {
             return nil
         }
         return string.data(using: .utf8)
+    }
+
+    /// All four, dark ones first in night mode.
+    ///
+    /// Both halves are always listed: night mode is a reason to put the dark
+    /// ones first, not a reason to make the light ones unreachable.
+    public static func ordered(nightMode: Bool) -> [ArbigramTheme] {
+        let dark = ArbigramTheme.allCases.filter { $0.isDark }
+        let light = ArbigramTheme.allCases.filter { !$0.isDark }
+        return nightMode ? dark + light : light + dark
     }
 }
 
