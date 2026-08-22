@@ -1170,15 +1170,15 @@ patch(
         if let label = label {
             itemLabel = .text(label, .standard, labelColor, labelBackground)
         } else if let badge = item.badge {
-            // ARBIGRAM: an unread badge in the account's own colour reads as
-            // both at once, which is the point of giving it a colour.
+            // ARBIGRAM: .badge takes no colour, so a coloured marker has to
+            // go through attributed text; the count keeps its own badge look.
             if let arbigramColor = item.arbigramColor {
-                itemLabel = .badge(badge, arbigramColor)
+                itemLabel = .attributedText(arbigramAccountMarker(color: arbigramColor, count: badge, theme: presentationData.theme))
             } else {
                 itemLabel = .badge(badge)
             }
         } else if let arbigramColor = item.arbigramColor {
-            itemLabel = .badge("  ", arbigramColor) // ARBIGRAM
+            itemLabel = .attributedText(arbigramAccountMarker(color: arbigramColor, count: nil, theme: presentationData.theme)) // ARBIGRAM
         } else {
             itemLabel = .none
         }""",

@@ -157,10 +157,10 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
                 accountColor = UIColor(rgb: ArbigramAccountMeta.palette[row.meta.colorIndex])
             }
             let label: ItemListPeerItemLabel
-            if row.unreadCount > 0 {
-                label = .badge("\(row.unreadCount)", accountColor ?? presentationData.theme.list.itemAccentColor)
-            } else if let accountColor {
-                label = .badge("  ", accountColor)
+            if let accountColor {
+                label = .attributedText(arbigramAccountMarker(color: accountColor, count: row.unreadCount > 0 ? "\(row.unreadCount)" : nil, theme: presentationData.theme))
+            } else if row.unreadCount > 0 {
+                label = .badge("\(row.unreadCount)")
             } else {
                 label = .none
             }

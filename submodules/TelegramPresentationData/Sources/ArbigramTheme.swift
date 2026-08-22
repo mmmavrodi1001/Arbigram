@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Display
 import Postbox
 import TelegramCore
 import TelegramUIPreferences
@@ -157,4 +158,24 @@ public func arbigramAccentColor(dark: Bool) -> PresentationThemeAccentColor {
         bubbleColors: theme.bubbleColors,
         wallpaper: theme.wallpaper
     )
+}
+
+/// A filled dot in an account's colour, with the unread count beside it when
+/// there is one — one label that answers both questions at once.
+///
+/// It lives here because both the fork's own accounts screen and the account
+/// rows in Settings draw it, and those are different modules.
+public func arbigramAccountMarker(color: UIColor, count: String?, theme: PresentationTheme) -> NSAttributedString {
+    let result = NSMutableAttributedString()
+    result.append(NSAttributedString(string: "●", attributes: [
+        .foregroundColor: color,
+        .font: Font.regular(15.0)
+    ]))
+    if let count, !count.isEmpty {
+        result.append(NSAttributedString(string: " " + count, attributes: [
+            .foregroundColor: theme.list.itemSecondaryTextColor,
+            .font: Font.regular(15.0)
+        ]))
+    }
+    return result
 }
