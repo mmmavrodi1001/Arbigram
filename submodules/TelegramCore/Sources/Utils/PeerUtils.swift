@@ -1,6 +1,6 @@
 import Foundation
 import Postbox
-import ArbigramSettings
+import ArbigramCore
 
 public let anonymousSavedMessagesId: Int64 = 2666000
 
@@ -254,7 +254,7 @@ public extension Peer {
     
     var isCopyProtectionEnabled: Bool {
         // ARBIGRAM: text selection and media saving both hang off this flag
-        if ArbigramSettings.shared.ignoreCopyProtection {
+        if ArbigramCoreSettings.shared.ignoreCopyProtection {
             return false
         }
         switch self {

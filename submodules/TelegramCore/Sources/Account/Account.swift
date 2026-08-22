@@ -5,7 +5,7 @@ import MtProtoKit
 import TelegramApi
 import CryptoUtils
 import EncryptionProvider
-import ArbigramSettings
+import ArbigramCore
 
 private let accountRecordToActiveKeychainId = Atomic<[AccountRecordId: Int]>(value: [:])
 
@@ -1642,7 +1642,7 @@ public class Account {
         // ARBIGRAM: only additions are suppressed, so an activity that started
         // before the switch was flipped can still be withdrawn. Group-call
         // speaking drives the call UI rather than a status line, so it stays.
-        if isPresent && ArbigramSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
+        if isPresent && ArbigramCoreSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
             return
         }
         self.localInputActivityManager.transaction { manager in
@@ -1656,7 +1656,7 @@ public class Account {
     
     public func acquireLocalInputActivity(peerId: PeerActivitySpace, activity: PeerInputActivity) -> Disposable {
         // ARBIGRAM
-        if ArbigramSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
+        if ArbigramCoreSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
             return EmptyDisposable
         }
         return self.localInputActivityManager.acquireActivity(chatPeerId: peerId, peerId: self.peerId, activity: activity)

@@ -1,7 +1,7 @@
 import Foundation
 import Postbox
 import TelegramApi
-import ArbigramSettings
+import ArbigramCore
 
 public extension MessageFlags {
     var isSending: Bool {
@@ -393,7 +393,7 @@ public extension Message {
     
     func isCopyProtected() -> Bool {
         // ARBIGRAM
-        if ArbigramSettings.shared.ignoreCopyProtection {
+        if ArbigramCoreSettings.shared.ignoreCopyProtection {
             return false
         }
         if self.flags.contains(.CopyProtected) {

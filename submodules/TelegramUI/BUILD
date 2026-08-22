@@ -51,6 +51,7 @@ swift_library(
     deps = [
         "//third-party/recaptcha:RecaptchaEnterprise",
         "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM
+        "//submodules/ArbigramCore:ArbigramCore",  # ARBIGRAM
         "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",
         "//submodules/SSignalKit/SSignalKit:SSignalKit",
         "//submodules/AsyncDisplayKit:AsyncDisplayKit",

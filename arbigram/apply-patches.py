@@ -145,7 +145,7 @@ AD_PATH = 'submodules/TelegramCore/Sources/TelegramEngine/Messages/AdMessages.sw
 patch(
     AD_PATH,
     "import TelegramApi\n",
-    "import TelegramApi\nimport ArbigramSettings\n",
+    "import TelegramApi\nimport ArbigramCore\n",
     'sponsored: settings import',
 )
 patch(
@@ -154,7 +154,7 @@ patch(
                 return .single((nil, nil, nil, []))
             }""",
     """            // ARBIGRAM: bail out before the sponsored-message request is issued
-            guard let inputPeer, !ArbigramSettings.shared.hideSponsoredMessages else {
+            guard let inputPeer, !ArbigramCoreSettings.shared.hideSponsoredMessages else {
                 return .single((nil, nil, nil, []))
             }""",
     'sponsored messages never requested',
@@ -410,9 +410,9 @@ patch(
 # what has to be threaded through upstream to reach them.
 
 SETTINGS_DEP = '        "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM'
+CORE_DEP = '        "//submodules/ArbigramCore:ArbigramCore",  # ARBIGRAM'
 
 for build_file, dep_anchor in [
-    ('submodules/TelegramCore/BUILD', '        "//submodules/TelegramApi:TelegramApi",'),
     ('submodules/ChatListUI/BUILD', '        "//submodules/SSignalKit/SwiftSignalKit:SwiftSignalKit",'),
     ('submodules/TelegramUI/BUILD', '        "//third-party/recaptcha:RecaptchaEnterprise",'),
     ('submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD', '        "//submodules/AccountContext",'),
@@ -423,6 +423,22 @@ for build_file, dep_anchor in [
         dep_anchor + '\n' + SETTINGS_DEP + '\n',
         'settings: dep in %s' % build_file.split('/')[-2],
     )
+
+# TelegramCore takes the small module, not the big one: that boundary decides
+# whether an edit rebuilds three modules or three hundred.
+patch(
+    'submodules/TelegramCore/BUILD',
+    '        "//submodules/TelegramApi:TelegramApi",\n',
+    '        "//submodules/TelegramApi:TelegramApi",\n' + CORE_DEP + '\n',
+    'settings: dep in TelegramCore',
+)
+
+patch(
+    'submodules/TelegramUI/BUILD',
+    SETTINGS_DEP + '\n',
+    SETTINGS_DEP + '\n' + CORE_DEP + '\n',
+    'settings: core dep in TelegramUI',
+)
 
 # PeerInfoScreen cannot depend on TelegramUI, so the screen is reached through
 # the same SharedAccountContext factory the business and energy-saving screens
@@ -527,7 +543,7 @@ ACCOUNT_PATH = 'submodules/TelegramCore/Sources/Account/Account.swift'
 patch(
     ACCOUNT_PATH,
     'import EncryptionProvider',
-    'import EncryptionProvider\nimport ArbigramSettings',
+    'import EncryptionProvider\nimport ArbigramCore',
     'typing: account import',
 )
 
@@ -556,7 +572,7 @@ patch(
         // ARBIGRAM: only additions are suppressed, so an activity that started
         // before the switch was flipped can still be withdrawn. Group-call
         // speaking drives the call UI rather than a status line, so it stays.
-        if isPresent && ArbigramSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
+        if isPresent && ArbigramCoreSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
             return
         }
         self.localInputActivityManager.transaction { manager in""",
@@ -570,7 +586,7 @@ patch(
     }""",
     """    public func acquireLocalInputActivity(peerId: PeerActivitySpace, activity: PeerInputActivity) -> Disposable {
         // ARBIGRAM
-        if ArbigramSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
+        if ArbigramCoreSettings.shared.hideInputActivity && !activity.isArbigramGroupCallSpeaking {
             return EmptyDisposable
         }
         return self.localInputActivityManager.acquireActivity(chatPeerId: peerId, peerId: self.peerId, activity: activity)
@@ -583,7 +599,7 @@ patch(
 patch(
     'submodules/TelegramCore/Sources/Utils/MessageUtils.swift',
     'import TelegramApi',
-    'import TelegramApi\nimport ArbigramSettings',
+    'import TelegramApi\nimport ArbigramCore',
     'copy protection: message import',
 )
 
@@ -593,7 +609,7 @@ patch(
         if self.flags.contains(.CopyProtected) {""",
     """    func isCopyProtected() -> Bool {
         // ARBIGRAM
-        if ArbigramSettings.shared.ignoreCopyProtection {
+        if ArbigramCoreSettings.shared.ignoreCopyProtection {
             return false
         }
         if self.flags.contains(.CopyProtected) {""",
@@ -603,7 +619,7 @@ patch(
 patch(
     'submodules/TelegramCore/Sources/Utils/PeerUtils.swift',
     'import Postbox',
-    'import Postbox\nimport ArbigramSettings',
+    'import Postbox\nimport ArbigramCore',
     'copy protection: peer import',
 )
 
@@ -614,7 +630,7 @@ patch(
         case let group as TelegramGroup:""",
     """    var isCopyProtectionEnabled: Bool {
         // ARBIGRAM: text selection and media saving both hang off this flag
-        if ArbigramSettings.shared.ignoreCopyProtection {
+        if ArbigramCoreSettings.shared.ignoreCopyProtection {
             return false
         }
         switch self {

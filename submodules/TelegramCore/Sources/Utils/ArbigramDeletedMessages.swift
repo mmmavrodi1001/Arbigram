@@ -1,6 +1,6 @@
 import Foundation
 import Postbox
-import ArbigramSettings
+import ArbigramCore
 
 /// Copies a message out before the postbox loses it.
 ///
@@ -13,7 +13,7 @@ import ArbigramSettings
 /// Only incoming messages are recorded. Deleting your own message is a decision
 /// you made, and logging it would turn a fork feature into a hoarder.
 func arbigramRecordDeletedMessages(transaction: Transaction, ids: [MessageId]) {
-    if !ArbigramSettings.shared.keepDeletedMessages {
+    if !ArbigramCoreSettings.shared.keepDeletedMessages {
         return
     }
 
@@ -77,13 +77,13 @@ func arbigramRecordDeletedMessages(transaction: Transaction, ids: [MessageId]) {
     }
 
     if !records.isEmpty {
-        ArbigramSettings.shared.appendDeletedMessages(records)
+        ArbigramCoreSettings.shared.appendDeletedMessages(records)
     }
 }
 
 /// The global-id variants of the same updates never name a message directly.
 func arbigramRecordDeletedMessagesWithGlobalIds(transaction: Transaction, globalIds: [Int32]) {
-    if !ArbigramSettings.shared.keepDeletedMessages {
+    if !ArbigramCoreSettings.shared.keepDeletedMessages {
         return
     }
     arbigramRecordDeletedMessages(transaction: transaction, ids: transaction.messageIdsForGlobalIds(globalIds))

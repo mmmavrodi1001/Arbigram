@@ -1,4 +1,7 @@
 import Foundation
+// Re-exported so that everything above the engine still sees one store: the
+// lower half is an implementation detail of where the build boundary had to go.
+@_exported import ArbigramCore
 
 /// What the fork remembers about an account beyond what Telegram stores.
 ///
@@ -50,57 +53,33 @@ public struct ArbigramAccountMeta: Codable, Equatable {
     }
 }
 
-/// A message the other side deleted, copied out before the postbox dropped it.
-public struct ArbigramDeletedMessage: Codable, Equatable {
-    public var chatId: Int64
-    public var chatTitle: String
-    public var authorTitle: String
-    public var text: String
-    /// "photo", "voice", "file"… empty when the message was only text.
-    public var mediaKind: String
-    public var timestamp: Int32
-    public var deletedAt: Int32
-
-    public init(chatId: Int64, chatTitle: String, authorTitle: String, text: String, mediaKind: String, timestamp: Int32, deletedAt: Int32) {
-        self.chatId = chatId
-        self.chatTitle = chatTitle
-        self.authorTitle = authorTitle
-        self.text = text
-        self.mediaKind = mediaKind
-        self.timestamp = timestamp
-        self.deletedAt = deletedAt
-    }
-}
-
 /// The fork's own switches.
 ///
 /// These cannot live in TelegramUIPreferences with the rest of the app's
-/// settings. That module sits *above* TelegramCore, and several of these are
-/// read from inside it — the sponsored-message request is refused there, before
-/// it is ever issued, rather than filtered afterwards. UserDefaults in the
-/// shared app group is the one store both ends can reach, and it answers
-/// synchronously, which the call sites need: a chat opening and a chat-list
-/// layout pass have nowhere to await a signal.
+/// settings: that module sits above TelegramCore, and some of these are read
+/// from inside it. UserDefaults in the shared app group is the one store both
+/// ends can reach, and it answers synchronously, which the call sites need — a
+/// chat opening and a chat-list layout pass have nowhere to await a signal.
+///
+/// The half TelegramCore actually reads lives in ArbigramCore, one module down.
+/// Everything here sits above the engine, so editing it rebuilds a handful of
+/// modules rather than the entire project.
 public final class ArbigramSettings {
     public static let shared = ArbigramSettings()
 
-    /// Posted after any switch changes.
+    /// Posted after any switch changes, in either half of the store.
     ///
     /// The chat list decides on its stories header during layout rather than
     /// from a subscription, so without this nothing would tell it to look
     /// again until the next unrelated update arrived.
-    public static let changedNotification = Notification.Name("ArbigramSettingsChanged")
+    public static let changedNotification = ArbigramCoreSettings.changedNotification
 
     private enum Key: String, CaseIterable {
         case hideStories = "arbigram.hideStories"
-        case hideSponsoredMessages = "arbigram.hideSponsoredMessages"
         case showPeerId = "arbigram.showPeerId"
         case skipReadHistory = "arbigram.skipReadHistory"
-        case hideInputActivity = "arbigram.hideInputActivity"
-        case ignoreCopyProtection = "arbigram.ignoreCopyProtection"
         case hideContactsTab = "arbigram.hideContactsTab"
         case saveSecretMedia = "arbigram.saveSecretMedia"
-        case keepDeletedMessages = "arbigram.keepDeletedMessages"
         case didApplyTheme = "arbigram.didApplyTheme"
 
         /// The first three replaced constants that were compiled in, so they
@@ -108,9 +87,9 @@ public final class ArbigramSettings {
         /// they are asked for.
         var defaultValue: Bool {
             switch self {
-            case .hideStories, .hideSponsoredMessages, .showPeerId:
+            case .hideStories, .showPeerId:
                 return true
-            case .skipReadHistory, .hideInputActivity, .ignoreCopyProtection, .hideContactsTab, .saveSecretMedia, .keepDeletedMessages, .didApplyTheme:
+            case .skipReadHistory, .hideContactsTab, .saveSecretMedia, .didApplyTheme:
                 return false
             }
         }
@@ -119,22 +98,49 @@ public final class ArbigramSettings {
     private let defaults: UserDefaults
 
     private init() {
-        // The container the signing profile grants; the same name is pinned in
-        // Telegram/BUILD and in the two runtime lookups in AppDelegate.
-        self.defaults = UserDefaults(suiteName: "group.dfbc88d056a46f1b.1") ?? UserDefaults.standard
+        // One suite for both halves, opened by the lower one.
+        self.defaults = ArbigramCoreSettings.shared.defaults
         self.defaults.register(defaults: Dictionary(uniqueKeysWithValues: Key.allCases.map { ($0.rawValue, $0.defaultValue) }))
+    }
+
+    // The switches TelegramCore reads live one module down, where an edit does
+    // not rebuild the whole project. They are forwarded here so that everything
+    // above the engine still sees a single store.
+
+    public var hideSponsoredMessages: Bool {
+        get { return ArbigramCoreSettings.shared.hideSponsoredMessages }
+        set { ArbigramCoreSettings.shared.hideSponsoredMessages = newValue }
+    }
+
+    public var hideInputActivity: Bool {
+        get { return ArbigramCoreSettings.shared.hideInputActivity }
+        set { ArbigramCoreSettings.shared.hideInputActivity = newValue }
+    }
+
+    public var ignoreCopyProtection: Bool {
+        get { return ArbigramCoreSettings.shared.ignoreCopyProtection }
+        set { ArbigramCoreSettings.shared.ignoreCopyProtection = newValue }
+    }
+
+    public var keepDeletedMessages: Bool {
+        get { return ArbigramCoreSettings.shared.keepDeletedMessages }
+        set { ArbigramCoreSettings.shared.keepDeletedMessages = newValue }
+    }
+
+    public static let deletedMessagesLimit = ArbigramCoreSettings.deletedMessagesLimit
+
+    public var deletedMessages: [ArbigramDeletedMessage] {
+        return ArbigramCoreSettings.shared.deletedMessages
+    }
+
+    public func clearDeletedMessages() {
+        ArbigramCoreSettings.shared.clearDeletedMessages()
     }
 
     /// Chat-list stories strip.
     public var hideStories: Bool {
         get { return self.defaults.bool(forKey: Key.hideStories.rawValue) }
         set { self.set(.hideStories, newValue) }
-    }
-
-    /// Sponsored messages, refused at the request rather than hidden on arrival.
-    public var hideSponsoredMessages: Bool {
-        get { return self.defaults.bool(forKey: Key.hideSponsoredMessages.rawValue) }
-        set { self.set(.hideSponsoredMessages, newValue) }
     }
 
     /// The numeric identifier row in profiles.
@@ -151,30 +157,11 @@ public final class ArbigramSettings {
         set { self.set(.skipReadHistory, newValue) }
     }
 
-    /// Outgoing typing and recording indicators.
-    public var hideInputActivity: Bool {
-        get { return self.defaults.bool(forKey: Key.hideInputActivity.rawValue) }
-        set { self.set(.hideInputActivity, newValue) }
-    }
-
-    /// Whether a chat's copy-protection flag is honoured. Both text selection
-    /// and media saving hang off the same flag, so one switch covers both.
-    public var ignoreCopyProtection: Bool {
-        get { return self.defaults.bool(forKey: Key.ignoreCopyProtection.rawValue) }
-        set { self.set(.ignoreCopyProtection, newValue) }
-    }
-
     /// Self-destructing photos and videos, copied to the camera roll as they
     /// are opened. The file is already downloaded by then — this only keeps it.
     public var saveSecretMedia: Bool {
         get { return self.defaults.bool(forKey: Key.saveSecretMedia.rawValue) }
         set { self.set(.saveSecretMedia, newValue) }
-    }
-
-    /// Whether incoming messages are copied out before they are deleted.
-    public var keepDeletedMessages: Bool {
-        get { return self.defaults.bool(forKey: Key.keepDeletedMessages.rawValue) }
-        set { self.set(.keepDeletedMessages, newValue) }
     }
 
     /// The Contacts tab. Calls already has an upstream switch of its own.
@@ -320,37 +307,6 @@ public final class ArbigramSettings {
         return result.sorted()
     }
 
-    private static let deletedMessagesKey = "arbigram.deletedMessages"
-
-    /// Bounded on purpose. This is a record of what was said, not an archive,
-    /// and an unbounded list in defaults would grow until it hurt launch time.
-    public static let deletedMessagesLimit = 500
-
-    public var deletedMessages: [ArbigramDeletedMessage] {
-        guard let data = self.defaults.data(forKey: ArbigramSettings.deletedMessagesKey),
-              let decoded = try? JSONDecoder().decode([ArbigramDeletedMessage].self, from: data) else {
-            return []
-        }
-        return decoded
-    }
-
-    public func appendDeletedMessages(_ records: [ArbigramDeletedMessage]) {
-        if records.isEmpty {
-            return
-        }
-        var all = self.deletedMessages
-        all.append(contentsOf: records)
-        if all.count > ArbigramSettings.deletedMessagesLimit {
-            all.removeFirst(all.count - ArbigramSettings.deletedMessagesLimit)
-        }
-        if let data = try? JSONEncoder().encode(all) {
-            self.defaults.set(data, forKey: ArbigramSettings.deletedMessagesKey)
-        }
-    }
-
-    public func clearDeletedMessages() {
-        self.defaults.removeObject(forKey: ArbigramSettings.deletedMessagesKey)
-    }
 
     private func set(_ key: Key, _ value: Bool) {
         if self.defaults.bool(forKey: key.rawValue) == value {

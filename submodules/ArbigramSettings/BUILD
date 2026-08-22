@@ -9,9 +9,11 @@ swift_library(
     copts = [
         "-warnings-as-errors",
     ],
-    # Deliberately empty. TelegramCore depends on this module, so anything this
-    # one pulls in would end up underneath TelegramCore too.
+    # Above TelegramCore, which is the point: editing this module rebuilds a
+    # handful of modules rather than the whole project. What the engine itself
+    # has to read lives in ArbigramCore instead.
     deps = [
+        "//submodules/ArbigramCore:ArbigramCore",
     ],
     visibility = [
         "//visibility:public",
