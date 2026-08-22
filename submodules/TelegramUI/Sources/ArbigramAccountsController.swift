@@ -172,7 +172,7 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
                 customAvatarIcon: customAvatarIcon,
                 presence: nil,
                 text: subtitle.isEmpty ? .none : .text(subtitle, .secondary),
-                label: row.unreadCount > 0 ? .badge("\(row.unreadCount)", presentationData.theme.list.itemAccentColor) : .none,
+                label: row.unreadCount > 0 ? .badge("\(row.unreadCount)") : .none,
                 editing: ItemListPeerItemEditing(editable: true, editing: editing, canBeReordered: true, revealed: revealed),
                 revealOptions: ItemListPeerItemRevealOptions(options: [
                     ItemListPeerItemRevealOption(type: .neutral, title: pinTitle, action: {
