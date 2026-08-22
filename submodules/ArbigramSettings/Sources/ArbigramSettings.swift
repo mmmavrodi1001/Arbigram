@@ -134,6 +134,10 @@ public final class ArbigramSettings {
         ArbigramCoreSettings.shared.clearDeletedMessages()
     }
 
+    public func deletedMediaPath(_ name: String) -> String? {
+        return ArbigramCoreSettings.shared.deletedMediaPath(name)
+    }
+
     /// Chat-list stories strip.
     public var hideStories: Bool {
         get { return self.defaults.bool(forKey: Key.hideStories.rawValue) }
