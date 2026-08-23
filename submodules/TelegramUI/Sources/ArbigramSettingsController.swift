@@ -272,7 +272,7 @@ private enum ArbigramSettingsEntry: ItemListNodeEntry {
                 arguments.openDeletedMessages()
             })
         case let .secretPhrase(value):
-            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: ""), text: value, placeholder: loc(presentationData.strings, "Фраза для скрытых аккаунтов", "Phrase for hidden accounts"), type: .regular(capitalization: false, autocorrection: false), clearType: .always, sectionId: self.section, textUpdated: { value in
+            return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(string: loc(presentationData.strings, "Фраза", "Phrase")), text: value, placeholder: loc(presentationData.strings, "задать фразу скрытия", "set the hiding phrase"), type: .regular(capitalization: false, autocorrection: false), clearType: .always, sectionId: self.section, textUpdated: { value in
                 arguments.setSecretPhrase(value)
             }, action: {})
         case .secretPhraseInfo:
@@ -360,7 +360,7 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
         }
         // The row is its own tell: once something is hidden it goes away, so a
         // stranger sees no sign the feature is even configured.
-        if !state.hasHiddenAccounts || state.hiddenRevealed {
+        if !state.hasHiddenAccounts || state.secretPhrase.isEmpty || state.hiddenRevealed {
             entries.append(.secretPhrase(state.secretPhrase))
             entries.append(.secretPhraseInfo)
         }
