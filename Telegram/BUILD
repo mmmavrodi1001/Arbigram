@@ -164,6 +164,26 @@ minimum_os_version = "13.0"
 
 notificationServiceExtensionVersion = "v1"
 
+# ARBIGRAM: which app extensions get embedded.
+#
+# Empty because the signing profile covers a single application id, and an
+# extension needs its own profile for {telegram_bundle_id}.<Suffix>. Uncomment
+# a line as its profile arrives: the build system sorts profiles by the
+# application-identifier inside them, so dropping the file into the codesigning
+# directory is the only other step.
+#
+# NotificationService is the one that matters — it is what decrypts a push and
+# puts the sender and the text into the banner. Without it the payload arrives
+# sealed and iOS can only show a generic line.
+arbigram_extensions = [
+    # ":NotificationServiceExtension" + notificationServiceExtensionVersion,
+    # ":ShareExtension",
+    # ":NotificationContentExtension",
+    # ":IntentsExtension",
+    # ":WidgetExtension",
+    # ":BroadcastUploadExtension",
+]
+
 empty_languages = [
     "ar",
     "be",
@@ -1804,8 +1824,7 @@ ios_application(
     strings = [
         ":AppStringResources",
     ],
-    # ARBIGRAM: no app extensions — the signing profile covers one app id only
-    extensions = [],
+    extensions = arbigram_extensions,
     # Embed the in-repo tgwatch watch app (Telegram/WatchApp) under Watch/ only when
     # --//Telegram:embedWatchApp is set (Make.py sets it for device configs when
     # --embedWatchApp is passed). Off by default, so simulator/dev builds are unaffected.

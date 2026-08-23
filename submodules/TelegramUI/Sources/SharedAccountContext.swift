@@ -579,58 +579,6 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }).start()
         }
 
-        // ARBIGRAM: the fork's themes are local themes, and a local theme is
-        // read back out of the media box by its resource, so both have to be
-        // written there before anything can select one. Rewritten on every
-        // launch rather than once, so an edited definition ships with a build
-        // instead of being stuck behind a first-run flag.
-        for arbigramTheme in ArbigramTheme.allCases {
-            guard let data = arbigramTheme.encoded() else {
-                continue
-            }
-            // Comparing against what is stored keeps an edited definition
-            // shipping with a build without rewriting four files every launch.
-            if let existingPath = self.accountManager.mediaBox.completedResourcePath(arbigramTheme.resource),
-               let existing = try? Data(contentsOf: URL(fileURLWithPath: existingPath), options: .mappedIfSafe),
-               existing == data {
-                continue
-            }
-            self.accountManager.mediaBox.storeResourceData(arbigramTheme.resource.id, data: data, synchronous: true)
-        }
-
-        // ARBIGRAM: raising a notification is the app's job, not the engine's,
-        // so the engine hands the records up rather than reaching for UIKit.
-        ArbigramCoreSettings.shared.onDeletedMessagesRecorded = { [weak self] records, _ in
-            guard let self, ArbigramSettings.shared.announceDeletedMessages else {
-                return
-            }
-            let isRussian = self.currentPresentationData.with({ $0 }).strings.baseLanguageCode.hasPrefix("ru")
-            arbigramAnnounceDeletedMessages(records, isRussian: isRussian)
-        }
-
-        // Selecting one, on the other hand, happens once. defaultSettings would
-        // only reach a fresh install, and an update installs over settings that
-        // already exist. After this the theme belongs to Appearance and is
-        // never forced again.
-        if !ArbigramSettings.shared.didApplyTheme {
-            ArbigramSettings.shared.didApplyTheme = true
-            let _ = updatePresentationThemeSettingsInteractively(accountManager: self.accountManager, { current in
-                var current = current
-                var accentColors = current.themeSpecificAccentColors
-                accentColors[PresentationThemeReference.builtin(.dayClassic).index] = arbigramAccentColor(dark: false)
-                accentColors[PresentationThemeReference.builtin(.day).index] = arbigramAccentColor(dark: false)
-                accentColors[PresentationThemeReference.builtin(.night).index] = arbigramAccentColor(dark: true)
-                accentColors[PresentationThemeReference.builtin(.nightAccent).index] = arbigramAccentColor(dark: true)
-                current.themeSpecificAccentColors = accentColors
-                // A wallpaper already chosen for a theme wins over the theme's
-                // own, which would leave the new look half-applied.
-                current.themeSpecificChatWallpapers = [:]
-                current.theme = ArbigramTheme.violet.reference
-                current.automaticThemeSwitchSetting = AutomaticThemeSwitchSetting(force: current.automaticThemeSwitchSetting.force, trigger: current.automaticThemeSwitchSetting.trigger, theme: ArbigramTheme.midnight.reference)
-                return current
-            }).start()
-        }
-
         let immediateExperimentalUISettingsValue = self.immediateExperimentalUISettingsValue
         let _ = immediateExperimentalUISettingsValue.swap(initialPresentationDataAndSettings.experimentalUISettings)
         

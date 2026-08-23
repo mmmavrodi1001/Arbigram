@@ -104,6 +104,14 @@ jobs:
         env:
           P12_BASE64: ${{ secrets.ARBIGRAM_P12_BASE64 }}
           PROFILE_BASE64: ${{ secrets.ARBIGRAM_PROFILE_BASE64 }}
+          # Optional. Each one covers an app extension, which stays out of the
+          # bundle until Telegram/BUILD lists it in arbigram_extensions.
+          PROFILE_NOTIFICATIONSERVICE_BASE64: ${{ secrets.ARBIGRAM_PROFILE_NOTIFICATIONSERVICE_BASE64 }}
+          PROFILE_SHARE_BASE64: ${{ secrets.ARBIGRAM_PROFILE_SHARE_BASE64 }}
+          PROFILE_NOTIFICATIONCONTENT_BASE64: ${{ secrets.ARBIGRAM_PROFILE_NOTIFICATIONCONTENT_BASE64 }}
+          PROFILE_INTENTS_BASE64: ${{ secrets.ARBIGRAM_PROFILE_INTENTS_BASE64 }}
+          PROFILE_WIDGET_BASE64: ${{ secrets.ARBIGRAM_PROFILE_WIDGET_BASE64 }}
+          PROFILE_BROADCASTUPLOAD_BASE64: ${{ secrets.ARBIGRAM_PROFILE_BROADCASTUPLOAD_BASE64 }}
         run: |
           cd /Users/Shared/arbigram
           SIGN_DIR=build-system/arbigram-codesigning
@@ -115,6 +123,21 @@ jobs:
           security cms -D -i "$SIGN_DIR/profiles/Telegram.mobileprovision" > /tmp/profile.plist
           echo "profile application-id: $(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /tmp/profile.plist)"
           echo "profile expires:        $(/usr/libexec/PlistBuddy -c 'Print :ExpirationDate' /tmp/profile.plist)"
+
+          # Extension profiles are optional and need no further wiring: the build
+          # system reads the application-identifier out of every profile in this
+          # directory and files it under the matching name, so an extra file is
+          # picked up on its own. Listing the extension in Telegram/BUILD is what
+          # actually puts it in the bundle.
+          for name in NotificationService Share NotificationContent Intents Widget BroadcastUpload; do
+            var="PROFILE_$(echo "$name" | tr '[:lower:]' '[:upper:]')_BASE64"
+            value="${!var}"
+            if [ -n "$value" ]; then
+              echo "$value" | base64 --decode > "$SIGN_DIR/profiles/$name.mobileprovision"
+              security cms -D -i "$SIGN_DIR/profiles/$name.mobileprovision" > /tmp/ext.plist
+              echo "extension profile:      $(/usr/libexec/PlistBuddy -c 'Print :Entitlements:application-identifier' /tmp/ext.plist)"
+            fi
+          done
 
       # --continueOnError forwards bazel's --keep_going. A failing build then
       # reports every compile error at once instead of stopping at the first,

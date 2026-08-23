@@ -322,9 +322,35 @@ patch(
             ":BroadcastUploadExtension",
         ],
     }),""",
-    """    # ARBIGRAM: no app extensions — the signing profile covers one app id only
-    extensions = [],""",
+    """    extensions = arbigram_extensions,""",
     'signing: app extensions dropped',
+)
+
+patch(
+    'Telegram/BUILD',
+    'notificationServiceExtensionVersion = "v1"',
+    """notificationServiceExtensionVersion = "v1"
+
+# ARBIGRAM: which app extensions get embedded.
+#
+# Empty because the signing profile covers a single application id, and an
+# extension needs its own profile for {telegram_bundle_id}.<Suffix>. Uncomment
+# a line as its profile arrives: the build system sorts profiles by the
+# application-identifier inside them, so dropping the file into the codesigning
+# directory is the only other step.
+#
+# NotificationService is the one that matters — it is what decrypts a push and
+# puts the sender and the text into the banner. Without it the payload arrives
+# sealed and iOS can only show a generic line.
+arbigram_extensions = [
+    # ":NotificationServiceExtension" + notificationServiceExtensionVersion,
+    # ":ShareExtension",
+    # ":NotificationContentExtension",
+    # ":IntentsExtension",
+    # ":WidgetExtension",
+    # ":BroadcastUploadExtension",
+]""",
+    'signing: extension list named',
 )
 
 # --------------------------------------------------------------- 8. app group
@@ -701,8 +727,13 @@ patch(
 
         // ARBIGRAM: raising a notification is the app's job, not the engine's,
         // so the engine hands the records up rather than reaching for UIKit.
-        ArbigramCoreSettings.shared.onDeletedMessagesRecorded = { [weak self] records, _ in
+        ArbigramCoreSettings.shared.onDeletedMessagesRecorded = { [weak self] records, accountId in
             guard let self, ArbigramSettings.shared.announceDeletedMessages else {
+                return
+            }
+            // A hidden account announcing a deletion by name is the same leak
+            // the push token was, arriving by a different road.
+            if ArbigramSettings.shared.meta(for: accountId).hidden && !ArbigramSettings.shared.hiddenRevealed {
                 return
             }
             let isRussian = self.currentPresentationData.with({ $0 }).strings.baseLanguageCode.hasPrefix("ru")
