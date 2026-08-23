@@ -11,22 +11,36 @@ import AccountUtils
 /// everyone" would quietly mean something different. Bots are left alone
 /// because revoking a conversation with a program is theatre. Saved Messages is
 /// left alone because there is no everyone.
+///
+/// The archive is asked for as well: an archived conversation is still a
+/// conversation, and a button that says every private chat cannot quietly mean
+/// every unarchived one.
 func arbigramPrivateChatPeers(context: AccountContext) -> Signal<[EnginePeer], NoError> {
-    return context.engine.messages.chatList(group: .root, count: 500)
-    |> take(1)
-    |> map { chatList -> [EnginePeer] in
+    let lists = combineLatest(
+        context.engine.messages.chatList(group: .root, count: 1000) |> take(1),
+        context.engine.messages.chatList(group: .archive, count: 1000) |> take(1)
+    )
+    return lists
+    |> map { root, archive -> [EnginePeer] in
+        var seen = Set<EnginePeer.Id>()
         var result: [EnginePeer] = []
-        for item in chatList.items {
-            guard case let .user(user) = item.renderedPeer.peer else {
-                continue
+        for chatList in [root, archive] {
+            for item in chatList.items {
+                guard case let .user(user) = item.renderedPeer.peer else {
+                    continue
+                }
+                if user.botInfo != nil {
+                    continue
+                }
+                if user.id == context.account.peerId {
+                    continue
+                }
+                if seen.contains(user.id) {
+                    continue
+                }
+                seen.insert(user.id)
+                result.append(.user(user))
             }
-            if user.botInfo != nil {
-                continue
-            }
-            if user.id == context.account.peerId {
-                continue
-            }
-            result.append(.user(user))
         }
         return result
     }
