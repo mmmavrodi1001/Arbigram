@@ -554,6 +554,7 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
 
 private enum ArbigramAccountDetailSection: Int32 {
     case pinned
+    case keepDeleted
     case hidden
     case color
     case tags
@@ -561,12 +562,14 @@ private enum ArbigramAccountDetailSection: Int32 {
 
 private final class ArbigramAccountDetailArguments {
     let setPinned: (Bool) -> Void
+    let setKeepDeleted: (Bool) -> Void
     let setHidden: (Bool) -> Void
     let setColor: (Int) -> Void
     let setTags: (String) -> Void
 
-    init(setPinned: @escaping (Bool) -> Void, setHidden: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, setTags: @escaping (String) -> Void) {
+    init(setPinned: @escaping (Bool) -> Void, setKeepDeleted: @escaping (Bool) -> Void, setHidden: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, setTags: @escaping (String) -> Void) {
         self.setPinned = setPinned
+        self.setKeepDeleted = setKeepDeleted
         self.setHidden = setHidden
         self.setColor = setColor
         self.setTags = setTags
@@ -575,6 +578,8 @@ private final class ArbigramAccountDetailArguments {
 
 private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
     case pinned(String, Bool)
+    case keepDeleted(String, Bool)
+    case keepDeletedInfo(String)
     case hidden(String, Bool)
     case hiddenInfo(String)
     case colorHeader(String)
@@ -587,6 +592,8 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
         switch self {
         case .pinned:
             return ArbigramAccountDetailSection.pinned.rawValue
+        case .keepDeleted, .keepDeletedInfo:
+            return ArbigramAccountDetailSection.keepDeleted.rawValue
         case .hidden, .hiddenInfo:
             return ArbigramAccountDetailSection.hidden.rawValue
         case .colorHeader, .color:
@@ -600,12 +607,16 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
         switch self {
         case .pinned:
             return 0
-        case .hidden:
+        case .keepDeleted:
+            return 1
+        case .keepDeletedInfo:
             return 2
-        case .hiddenInfo:
+        case .hidden:
             return 3
-        case .colorHeader:
+        case .hiddenInfo:
             return 4
+        case .colorHeader:
+            return 5
         case let .color(index, _, _):
             return Int32(10 + index)
         case .tagsHeader:
@@ -628,6 +639,12 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: self.section, style: .blocks, updated: { value in
                 arguments.setPinned(value)
             })
+        case let .keepDeleted(title, value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, maximumNumberOfLines: 2, sectionId: self.section, style: .blocks, updated: { value in
+                arguments.setKeepDeleted(value)
+            })
+        case let .keepDeletedInfo(text):
+            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         case let .hidden(title, value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, maximumNumberOfLines: 2, sectionId: self.section, style: .blocks, updated: { value in
                 arguments.setHidden(value)
@@ -653,12 +670,13 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
 private struct ArbigramAccountDetailState: Equatable {
     var meta: ArbigramAccountMeta
     var tagsText: String
+    var keepDeleted: Bool
 }
 
 public func arbigramAccountDetailController(context: AccountContext, userId: Int64) -> ViewController {
     let initialMeta = ArbigramSettings.shared.meta(for: userId)
-    let statePromise = ValuePromise(ArbigramAccountDetailState(meta: initialMeta, tagsText: initialMeta.tags.joined(separator: ", ")), ignoreRepeated: true)
-    let stateValue = Atomic(value: ArbigramAccountDetailState(meta: initialMeta, tagsText: initialMeta.tags.joined(separator: ", ")))
+    let statePromise = ValuePromise(ArbigramAccountDetailState(meta: initialMeta, tagsText: initialMeta.tags.joined(separator: ", "), keepDeleted: ArbigramSettings.shared.keepsDeletedMessages(accountId: userId)), ignoreRepeated: true)
+    let stateValue = Atomic(value: ArbigramAccountDetailState(meta: initialMeta, tagsText: initialMeta.tags.joined(separator: ", "), keepDeleted: ArbigramSettings.shared.keepsDeletedMessages(accountId: userId)))
     let updateState: ((inout ArbigramAccountDetailState) -> Void) -> Void = { f in
         statePromise.set(stateValue.modify { current in
             var updated = current
@@ -670,6 +688,9 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
 
     let arguments = ArbigramAccountDetailArguments(setPinned: { value in
         updateState { $0.meta.pinned = value }
+    }, setKeepDeleted: { value in
+        ArbigramSettings.shared.setKeepsDeletedMessages(value, accountId: userId)
+        updateState { $0.keepDeleted = value }
     }, setHidden: { value in
         updateState { $0.meta.hidden = value }
     }, setColor: { index in
@@ -696,6 +717,12 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
         let isRussian = presentationData.strings.baseLanguageCode.hasPrefix("ru")
         var entries: [ArbigramAccountDetailEntry] = []
         entries.append(.pinned(isRussian ? "Закрепить наверху" : "Pin to the top", state.meta.pinned))
+        if ArbigramSettings.shared.keepDeletedMessages {
+            entries.append(.keepDeleted(isRussian ? "Сохранять удалённые здесь" : "Keep Deleted Messages Here", state.keepDeleted))
+            entries.append(.keepDeletedInfo(isRussian
+                ? "Общий переключатель включён. Здесь можно выключить запись именно для этого аккаунта."
+                : "The master switch is on. This turns the log off for this account alone."))
+        }
         if !ArbigramSettings.shared.secretPhrase.isEmpty {
             entries.append(.hidden(isRussian ? "Скрыть аккаунт" : "Hide this account", state.meta.hidden))
             entries.append(.hiddenInfo(isRussian

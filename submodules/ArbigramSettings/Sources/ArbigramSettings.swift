@@ -136,6 +136,14 @@ public final class ArbigramSettings {
 
     public static let deletedMessagesLimit = ArbigramCoreSettings.deletedMessagesLimit
 
+    public func keepsDeletedMessages(accountId: Int64) -> Bool {
+        return ArbigramCoreSettings.shared.keepsDeletedMessages(accountId: accountId)
+    }
+
+    public func setKeepsDeletedMessages(_ value: Bool, accountId: Int64) {
+        ArbigramCoreSettings.shared.setKeepsDeletedMessages(value, accountId: accountId)
+    }
+
     public func deletedMessages(accountId: Int64) -> [ArbigramDeletedMessage] {
         return ArbigramCoreSettings.shared.deletedMessages(accountId: accountId)
     }

@@ -117,6 +117,38 @@ public final class ArbigramCoreSettings {
         set { self.set(.plainNotifications, newValue) }
     }
 
+    private static let deletedMessagesOffKey = "arbigram.deletedMessagesOffAccounts"
+
+    /// Accounts the deleted-message log skips, by user id.
+    ///
+    /// An exception list rather than an opt-in list: the switch above is the
+    /// master, and an account that has never been touched follows it. Storing
+    /// it the other way round would mean a new account silently opting out.
+    public var deletedMessagesOffAccountIds: Set<Int64> {
+        get {
+            let stored = self.defaults.array(forKey: ArbigramCoreSettings.deletedMessagesOffKey) as? [NSNumber] ?? []
+            return Set(stored.map { $0.int64Value })
+        }
+        set {
+            self.defaults.set(newValue.sorted().map { NSNumber(value: $0) }, forKey: ArbigramCoreSettings.deletedMessagesOffKey)
+            NotificationCenter.default.post(name: ArbigramCoreSettings.changedNotification, object: nil)
+        }
+    }
+
+    public func keepsDeletedMessages(accountId: Int64) -> Bool {
+        return self.keepDeletedMessages && !self.deletedMessagesOffAccountIds.contains(accountId)
+    }
+
+    public func setKeepsDeletedMessages(_ value: Bool, accountId: Int64) {
+        var ids = self.deletedMessagesOffAccountIds
+        if value {
+            ids.remove(accountId)
+        } else {
+            ids.insert(accountId)
+        }
+        self.deletedMessagesOffAccountIds = ids
+    }
+
     // MARK: - Deleted messages
 
     private static let deletedMessagesKey = "arbigram.deletedMessagesByAccount"

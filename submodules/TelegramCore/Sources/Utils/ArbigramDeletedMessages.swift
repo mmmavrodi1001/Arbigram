@@ -13,7 +13,7 @@ import ArbigramCore
 /// Only incoming messages are recorded. Deleting your own message is a decision
 /// you made, and logging it would turn a fork feature into a hoarder.
 func arbigramRecordDeletedMessages(transaction: Transaction, mediaBox: MediaBox, accountPeerId: PeerId, ids: [MessageId]) {
-    if !ArbigramCoreSettings.shared.keepDeletedMessages {
+    if !ArbigramCoreSettings.shared.keepsDeletedMessages(accountId: accountPeerId.id._internalGetInt64Value()) {
         return
     }
 
@@ -110,7 +110,7 @@ func arbigramRecordDeletedMessages(transaction: Transaction, mediaBox: MediaBox,
 
 /// The global-id variants of the same updates never name a message directly.
 func arbigramRecordDeletedMessagesWithGlobalIds(transaction: Transaction, mediaBox: MediaBox, accountPeerId: PeerId, globalIds: [Int32]) {
-    if !ArbigramCoreSettings.shared.keepDeletedMessages {
+    if !ArbigramCoreSettings.shared.keepsDeletedMessages(accountId: accountPeerId.id._internalGetInt64Value()) {
         return
     }
     arbigramRecordDeletedMessages(transaction: transaction, mediaBox: mediaBox, accountPeerId: accountPeerId, ids: transaction.messageIdsForGlobalIds(globalIds))
