@@ -543,10 +543,6 @@ swift_library(
     ] + select({
         "@build_bazel_rules_apple//apple:ios_arm64": appcenter_targets,
         "//build-system:ios_sim_arm64": [],
-        # ARBIGRAM: building this library on its own, as the check workflow
-        # does, matches neither iOS condition and analysis fails outright.
-        # appcenter_targets is empty for this bundle id anyway.
-        "//conditions:default": [],
     }),
     visibility = [
         "//visibility:public",

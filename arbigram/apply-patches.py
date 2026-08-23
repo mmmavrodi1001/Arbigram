@@ -883,7 +883,7 @@ patch(
 # the id lists below unregisters its push token, so the server stops sending for
 # it rather than the app hiding what arrives. Registering unencrypted is what
 # puts the text back into the banner without the extension that would normally
-# decrypt it — the one this signing profile cannot cover.
+# decrypt it, which is the one this signing profile cannot cover.
 SHARED_CONTEXT = 'submodules/TelegramUI/Sources/SharedAccountContext.swift'
 patch(
     SHARED_CONTEXT,
@@ -891,7 +891,18 @@ patch(
         |> map { sharedData -> (allAccounts: Bool, includeMuted: Bool) in
             let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? InAppNotificationSettings.defaultSettings
             return (settings.displayNotificationsFromAllAccounts, false)
-        }""",
+        }
+        |> distinctUntilChanged(isEqual: { lhs, rhs in
+            if lhs.allAccounts != rhs.allAccounts {
+                return false
+            }
+            if lhs.includeMuted != rhs.includeMuted {
+                return false
+            }
+            return true
+        })
+        
+""",
     """        // ARBIGRAM: the suppressed set — accounts switched off, plus every
         // hidden one — is not a signal of its own, since the store is readable
         // from TelegramCore and carries no SwiftSignalKit. It is wrapped into
@@ -932,29 +943,9 @@ patch(
             }
             return true
         })
-        """,
+        
+""",
     'notifications: suppressed set and plain text',
-)
-
-patch(
-    SHARED_CONTEXT,
-    """            if lhs.includeMuted != rhs.includeMuted {
-                return false
-            }
-            return true
-        })""",
-    """            if lhs.includeMuted != rhs.includeMuted {
-                return false
-            }
-            if lhs.arbigramMutedAccountIds != rhs.arbigramMutedAccountIds {
-                return false
-            }
-            if lhs.arbigramPlain != rhs.arbigramPlain {
-                return false
-            }
-            return true
-        })""",
-    'notifications: re-register on change',
 )
 
 patch(
@@ -986,7 +977,7 @@ patch(
 
 patch(
     SHARED_CONTEXT,
-    '                        appliedAps = account.engine.accountData.registerNotificationToken(token: apsNotificationToken, type: .aps(encrypt: true), sandbox: sandbox,',
+    """                        appliedAps = account.engine.accountData.registerNotificationToken(token: apsNotificationToken, type: .aps(encrypt: true), sandbox: sandbox, otherAccountUserIds: (account.account.testingEnvironment ? activeTestingUserIds : activeProductionUserIds).filter({ $0 != account.account.peerId.id }), excludeMutedChats: !settings.includeMuted)""",
     """                        // ARBIGRAM: registering without encryption makes the
                         // server send the text in the payload, so iOS can show
                         // it without the extension that would normally decrypt
