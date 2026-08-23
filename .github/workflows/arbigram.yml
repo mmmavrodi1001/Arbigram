@@ -39,6 +39,12 @@ jobs:
           submodules: 'recursive'
           fetch-depth: 0
 
+      # Seconds of pure python, before anything expensive starts. It has already
+      # caught two real faults: an edit made straight in the tree that the patch
+      # set never learned about, and a block that ended up in a file twice.
+      - name: Verify the upstream patch set
+        run: python3 arbigram/verify-patches.py
+
       - name: Select Xcode
         run: |
           XCODE_VERSION=$(python3 -c "import json;print(json.load(open('versions.json'))['xcode'])")

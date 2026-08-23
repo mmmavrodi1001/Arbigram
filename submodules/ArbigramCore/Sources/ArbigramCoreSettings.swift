@@ -73,8 +73,16 @@ public final class ArbigramCoreSettings {
     /// one, and both halves of the app reach it.
     private let lock = NSLock()
 
-    private init() {
-        self.defaults = UserDefaults(suiteName: ArbigramCoreSettings.appGroupName) ?? UserDefaults.standard
+    private convenience init() {
+        // The app group, which the extensions would share if they were signed.
+        self.init(defaults: UserDefaults(suiteName: ArbigramCoreSettings.appGroupName) ?? UserDefaults.standard)
+    }
+
+    /// A store of its own. Everything here is behaviour over a UserDefaults, so
+    /// this is what a test drives — sharing the app group would mean a test run
+    /// silently rewriting the settings of the app installed beside it.
+    public init(defaults: UserDefaults) {
+        self.defaults = defaults
         self.defaults.register(defaults: Dictionary(uniqueKeysWithValues: Key.allCases.map { ($0.rawValue, $0.defaultValue) }))
     }
 

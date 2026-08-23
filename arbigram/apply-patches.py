@@ -1292,9 +1292,9 @@ patch(
 
 patch(
     'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsItems.swift',
-    """                let member: PeerInfoMember = .account(peer: EngineRenderedPeer(peer: peer))
+    r"""                let member: PeerInfoMember = .account(peer: EngineRenderedPeer(peer: peer))
                 items[.accounts]!.append(PeerInfoScreenMemberItem(id: member.id, context: mappedContext, enclosingPeer: nil, member: member, badge: badgeCount > 0 ? "\(compactNumericCountString(Int(badgeCount), decimalSeparator: presentationData.dateTimeFormat.decimalSeparator))" : nil, isAccount: true, action: { action in""",
-    """                let member: PeerInfoMember = .account(peer: EngineRenderedPeer(peer: peer))
+    r"""                let member: PeerInfoMember = .account(peer: EngineRenderedPeer(peer: peer))
                 // ARBIGRAM: tags and colour, so the list you actually switch
                 // accounts from carries them too
                 let arbigramMeta = ArbigramSettings.shared.meta(for: peerAccountContext.account.peerId.id._internalGetInt64Value())

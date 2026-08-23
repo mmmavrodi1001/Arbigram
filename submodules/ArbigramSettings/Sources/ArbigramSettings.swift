@@ -94,9 +94,15 @@ public final class ArbigramSettings {
 
     private let defaults: UserDefaults
 
-    private init() {
+    private convenience init() {
         // One suite for both halves, opened by the lower one.
-        self.defaults = ArbigramCoreSettings.shared.defaults
+        self.init(defaults: ArbigramCoreSettings.shared.defaults)
+    }
+
+    /// See the matching initialiser in ArbigramCoreSettings: a store of its own,
+    /// so a test never touches what the installed app is reading.
+    public init(defaults: UserDefaults) {
+        self.defaults = defaults
         self.defaults.register(defaults: Dictionary(uniqueKeysWithValues: Key.allCases.map { ($0.rawValue, $0.defaultValue) }))
     }
 
