@@ -37,12 +37,15 @@ swift_library(
     ],
 )
 
-# Pinned to a device and an OS that exist on the runner. The default runner
-# picks an invalid device and the test process exits 15 with nothing useful said.
+# The device is named because the default picks an invalid one and the test
+# process exits 15 with nothing useful said. The OS version is deliberately not:
+# the runner accepts only what the selected Xcode ships, which is not the newest
+# runtime installed on the machine. Pinning 26.5 was refused by an Xcode offering
+# 26.2, on a machine that had both. Left open it takes the newest it can actually
+# run, and survives the next image bump.
 ios_test_runner(
     name = "ArbigramSettingsTestRunner",
     device_type = "iPhone 17",
-    os_version = "26.5",
 )
 
 ios_unit_test(
