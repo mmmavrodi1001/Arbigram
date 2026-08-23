@@ -12,6 +12,7 @@ import PresentationDataUtils
 import AccountContext
 import AccountUtils
 import PeerInfoScreen
+import UndoUI
 import ArbigramSettings
 
 private let arbigramAccountsSectionPinned: ItemListSectionId = 0
@@ -554,6 +555,7 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
 
 private enum ArbigramAccountDetailSection: Int32 {
     case pinned
+    case clearChats
     case keepDeleted
     case hidden
     case color
@@ -566,13 +568,15 @@ private final class ArbigramAccountDetailArguments {
     let setHidden: (Bool) -> Void
     let setColor: (Int) -> Void
     let setTags: (String) -> Void
+    let clearPrivateChats: () -> Void
 
-    init(setPinned: @escaping (Bool) -> Void, setKeepDeleted: @escaping (Bool) -> Void, setHidden: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, setTags: @escaping (String) -> Void) {
+    init(setPinned: @escaping (Bool) -> Void, setKeepDeleted: @escaping (Bool) -> Void, setHidden: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, setTags: @escaping (String) -> Void, clearPrivateChats: @escaping () -> Void) {
         self.setPinned = setPinned
         self.setKeepDeleted = setKeepDeleted
         self.setHidden = setHidden
         self.setColor = setColor
         self.setTags = setTags
+        self.clearPrivateChats = clearPrivateChats
     }
 }
 
@@ -587,6 +591,8 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
     case tagsHeader(String)
     case tags(String, String)
     case tagsInfo(String)
+    case clearChats(String)
+    case clearChatsInfo(String)
 
     var section: ItemListSectionId {
         switch self {
@@ -600,6 +606,8 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
             return ArbigramAccountDetailSection.color.rawValue
         case .tagsHeader, .tags, .tagsInfo:
             return ArbigramAccountDetailSection.tags.rawValue
+        case .clearChats, .clearChatsInfo:
+            return ArbigramAccountDetailSection.clearChats.rawValue
         }
     }
 
@@ -625,6 +633,10 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
             return 101
         case .tagsInfo:
             return 102
+        case .clearChats:
+            return 200
+        case .clearChatsInfo:
+            return 201
         }
     }
 
@@ -663,6 +675,12 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
             }, action: {})
         case let .tagsInfo(text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+        case let .clearChats(title):
+            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: .destructive, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                arguments.clearPrivateChats()
+            })
+        case let .clearChatsInfo(text):
+            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         }
     }
 }
@@ -686,6 +704,8 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
         })
     }
 
+    var presentImpl: ((ViewController) -> Void)?
+
     let arguments = ArbigramAccountDetailArguments(setPinned: { value in
         updateState { $0.meta.pinned = value }
     }, setKeepDeleted: { value in
@@ -699,6 +719,51 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
             // "none" row to explain.
             state.meta.colorIndex = state.meta.colorIndex == index ? -1 : index
         }
+    }, clearPrivateChats: {
+        // Counted before it is described: "all your chats" is not a number, and
+        // the number is the part worth reading twice.
+        let _ = (arbigramAccountContext(context: context, userId: userId)
+        |> mapToSignal { accountContext -> Signal<(AccountContext, [EnginePeer])?, NoError> in
+            guard let accountContext else {
+                return .single(nil)
+            }
+            return arbigramPrivateChatPeers(context: accountContext)
+            |> map { peers -> (AccountContext, [EnginePeer])? in
+                return (accountContext, peers)
+            }
+        }
+        |> deliverOnMainQueue).startStandalone(next: { result in
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            let isRussian = presentationData.strings.baseLanguageCode.hasPrefix("ru")
+
+            guard let (accountContext, peers) = result, !peers.isEmpty else {
+                presentImpl?(textAlertController(context: context, title: nil, text: isRussian ? "Личных чатов нет." : "There are no private chats.", actions: [
+                    TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})
+                ]))
+                return
+            }
+
+            presentImpl?(textAlertController(
+                context: context,
+                title: isRussian ? "Очистить личные чаты" : "Clear Private Chats",
+                text: isRussian
+                    ? "Переписка будет удалена у обеих сторон в \(peers.count) чатах — и твои сообщения, и собеседника. У него чат станет пустым. Это необратимо.\n\nГруппы, каналы и боты не затрагиваются: там чужие сообщения удалить нельзя."
+                    : "History will be deleted for both sides in \(peers.count) chats — your messages and theirs. Their chat becomes empty. This cannot be undone.\n\nGroups, channels and bots are untouched: nobody else's messages can be removed there.",
+                actions: [
+                    TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+                    TextAlertAction(type: .destructiveAction, title: isRussian ? "Очистить" : "Clear", action: {
+                        arbigramRequireSecretPhrase(context: context, present: { controller in
+                            presentImpl?(controller)
+                        }, proceed: {
+                            let _ = (arbigramClearPrivateChats(context: accountContext, peers: peers)
+                            |> deliverOnMainQueue).startStandalone(completed: {
+                                presentImpl?(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: isRussian ? "Готово: \(peers.count)" : "Done: \(peers.count)", timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }))
+                            })
+                        })
+                    })
+                ]
+            ))
+        })
     }, setTags: { text in
         updateState { state in
             state.tagsText = text
@@ -739,6 +804,10 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
         entries.append(.tagsInfo(isRussian
             ? "Через запятую. Видно под именем — и здесь, и в списке аккаунтов в настройках."
             : "Comma separated. Shown under the name here and in the settings account list."))
+        entries.append(.clearChats(isRussian ? "Очистить все личные чаты" : "Clear All Private Chats"))
+        entries.append(.clearChatsInfo(isRussian
+            ? "Удаляет переписку у обеих сторон во всех личных чатах этого аккаунта. Группы, каналы и боты не затрагиваются. Спросит подтверждение и фразу."
+            : "Deletes the history for both sides in every private chat on this account. Groups, channels and bots are untouched. Asks for confirmation and the phrase."))
 
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),
@@ -755,5 +824,9 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
         return (controllerState, (listState, arguments))
     }
 
-    return ItemListController(context: context, state: signal)
+    let controller = ItemListController(context: context, state: signal)
+    presentImpl = { [weak controller] c in
+        controller?.present(c, in: .window(.root))
+    }
+    return controller
 }
