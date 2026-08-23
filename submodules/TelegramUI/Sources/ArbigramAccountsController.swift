@@ -570,7 +570,7 @@ private final class ArbigramAccountDetailArguments {
     let setTags: (String) -> Void
     let clearPrivateChats: () -> Void
 
-    init(setPinned: @escaping (Bool) -> Void, setKeepDeleted: @escaping (Bool) -> Void, setHidden: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, setTags: @escaping (String) -> Void, clearPrivateChats: @escaping () -> Void) {
+    init(setPinned: @escaping (Bool) -> Void, setKeepDeleted: @escaping (Bool) -> Void, setHidden: @escaping (Bool) -> Void, setColor: @escaping (Int) -> Void, clearPrivateChats: @escaping () -> Void, setTags: @escaping (String) -> Void) {
         self.setPinned = setPinned
         self.setKeepDeleted = setKeepDeleted
         self.setHidden = setHidden
