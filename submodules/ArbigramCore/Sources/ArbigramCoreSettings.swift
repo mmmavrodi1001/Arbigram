@@ -52,6 +52,8 @@ public final class ArbigramCoreSettings {
         case hideInputActivity = "arbigram.hideInputActivity"
         case ignoreCopyProtection = "arbigram.ignoreCopyProtection"
         case keepDeletedMessages = "arbigram.keepDeletedMessages"
+        case announceDeletedMessages = "arbigram.announceDeletedMessages"
+        case plainNotifications = "arbigram.plainNotifications"
 
         /// Hiding ads replaced a constant that was compiled in and keeps that
         /// behaviour. The rest are new and stay out of the way until asked for.
@@ -59,13 +61,17 @@ public final class ArbigramCoreSettings {
             switch self {
             case .hideSponsoredMessages:
                 return true
-            case .hideInputActivity, .ignoreCopyProtection, .keepDeletedMessages:
+            case .hideInputActivity, .ignoreCopyProtection, .keepDeletedMessages, .announceDeletedMessages, .plainNotifications:
                 return false
             }
         }
     }
 
     public let defaults: UserDefaults
+
+    /// The deleted log is written from the postbox queue and read from the main
+    /// one, and both halves of the app reach it.
+    private let lock = NSLock()
 
     private init() {
         self.defaults = UserDefaults(suiteName: ArbigramCoreSettings.appGroupName) ?? UserDefaults.standard
@@ -97,18 +103,115 @@ public final class ArbigramCoreSettings {
         set { self.set(.keepDeletedMessages, newValue) }
     }
 
-    private static let deletedMessagesKey = "arbigram.deletedMessages"
+    /// Whether a deletion also raises a notification, so it is seen when it
+    /// happens rather than whenever the list is next opened.
+    public var announceDeletedMessages: Bool {
+        get { return self.defaults.bool(forKey: Key.announceDeletedMessages.rawValue) }
+        set { self.set(.announceDeletedMessages, newValue) }
+    }
 
-    /// Bounded on purpose. This is a record of what was said, not an archive,
-    /// and an unbounded list in defaults would grow until it hurt launch time.
-    public static let deletedMessagesLimit = 500
+    /// Register for unencrypted push, so the payload carries readable text and
+    /// no extension is needed to decrypt it. See the note at the call site.
+    public var plainNotifications: Bool {
+        get { return self.defaults.bool(forKey: Key.plainNotifications.rawValue) }
+        set { self.set(.plainNotifications, newValue) }
+    }
 
-    public var deletedMessages: [ArbigramDeletedMessage] {
-        guard let data = self.defaults.data(forKey: ArbigramCoreSettings.deletedMessagesKey),
-              let decoded = try? JSONDecoder().decode([ArbigramDeletedMessage].self, from: data) else {
-            return []
+    // MARK: - Deleted messages
+
+    private static let deletedMessagesKey = "arbigram.deletedMessagesByAccount"
+
+    /// Per account, because one list across thirty accounts is not a record of
+    /// anything — and a hidden account's messages have no business showing up
+    /// under a visible one.
+    public static let deletedMessagesLimit = 200
+
+    private var cachedDeletedMessages: [Int64: [ArbigramDeletedMessage]]?
+
+    /// Called on the queue the deletion arrived on, with the records just
+    /// written. Installed from above the engine, which is where notifications
+    /// can be raised.
+    public var onDeletedMessagesRecorded: (([ArbigramDeletedMessage], Int64) -> Void)?
+
+    private func loadDeletedMessagesLocked() -> [Int64: [ArbigramDeletedMessage]] {
+        if let cached = self.cachedDeletedMessages {
+            return cached
         }
-        return decoded
+        var result: [Int64: [ArbigramDeletedMessage]] = [:]
+        if let data = self.defaults.data(forKey: ArbigramCoreSettings.deletedMessagesKey),
+           let decoded = try? JSONDecoder().decode([String: [ArbigramDeletedMessage]].self, from: data) {
+            for (key, value) in decoded {
+                if let id = Int64(key) {
+                    result[id] = value
+                }
+            }
+        }
+        self.cachedDeletedMessages = result
+        return result
+    }
+
+    private func storeDeletedMessagesLocked(_ value: [Int64: [ArbigramDeletedMessage]]) {
+        self.cachedDeletedMessages = value
+        var encodable: [String: [ArbigramDeletedMessage]] = [:]
+        for (id, records) in value where !records.isEmpty {
+            encodable["\(id)"] = records
+        }
+        if let data = try? JSONEncoder().encode(encodable) {
+            self.defaults.set(data, forKey: ArbigramCoreSettings.deletedMessagesKey)
+        }
+    }
+
+    public func deletedMessages(accountId: Int64) -> [ArbigramDeletedMessage] {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.loadDeletedMessagesLocked()[accountId] ?? []
+    }
+
+    public func appendDeletedMessages(_ records: [ArbigramDeletedMessage], accountId: Int64) {
+        if records.isEmpty {
+            return
+        }
+        self.lock.lock()
+        var all = self.loadDeletedMessagesLocked()
+        var forAccount = all[accountId] ?? []
+        forAccount.append(contentsOf: records)
+        if forAccount.count > ArbigramCoreSettings.deletedMessagesLimit {
+            // Dropping a record has to drop its file too, or the folder grows
+            // for ever behind a list that is capped.
+            let dropped = forAccount.prefix(forAccount.count - ArbigramCoreSettings.deletedMessagesLimit)
+            for record in dropped {
+                if let name = record.mediaFile, let path = self.deletedMediaPath(name) {
+                    try? FileManager.default.removeItem(atPath: path)
+                }
+            }
+            forAccount.removeFirst(forAccount.count - ArbigramCoreSettings.deletedMessagesLimit)
+        }
+        all[accountId] = forAccount
+        self.storeDeletedMessagesLocked(all)
+        self.lock.unlock()
+
+        self.onDeletedMessagesRecorded?(records, accountId)
+    }
+
+    /// Passing nil clears every account.
+    public func clearDeletedMessages(accountId: Int64?) {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        var all = self.loadDeletedMessagesLocked()
+        let cleared: [ArbigramDeletedMessage]
+        if let accountId {
+            cleared = all[accountId] ?? []
+            all[accountId] = []
+        } else {
+            cleared = all.values.flatMap { $0 }
+            all = [:]
+        }
+        for record in cleared {
+            if let name = record.mediaFile, let path = self.deletedMediaPath(name) {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+        }
+        self.storeDeletedMessagesLocked(all)
     }
 
     /// Where copied-out attachments live. In the shared container so the
@@ -126,37 +229,6 @@ public final class ArbigramCoreSettings {
 
     public func deletedMediaPath(_ name: String) -> String? {
         return self.deletedMediaDirectory?.appendingPathComponent(name).path
-    }
-
-    public func appendDeletedMessages(_ records: [ArbigramDeletedMessage]) {
-        if records.isEmpty {
-            return
-        }
-        var all = self.deletedMessages
-        all.append(contentsOf: records)
-        if all.count > ArbigramCoreSettings.deletedMessagesLimit {
-            // Dropping a record has to drop its file too, or the folder grows
-            // for ever behind a list that is capped.
-            let dropped = all.prefix(all.count - ArbigramCoreSettings.deletedMessagesLimit)
-            for record in dropped {
-                if let name = record.mediaFile, let path = self.deletedMediaPath(name) {
-                    try? FileManager.default.removeItem(atPath: path)
-                }
-            }
-            all.removeFirst(all.count - ArbigramCoreSettings.deletedMessagesLimit)
-        }
-        if let data = try? JSONEncoder().encode(all) {
-            self.defaults.set(data, forKey: ArbigramCoreSettings.deletedMessagesKey)
-        }
-    }
-
-    public func clearDeletedMessages() {
-        for record in self.deletedMessages {
-            if let name = record.mediaFile, let path = self.deletedMediaPath(name) {
-                try? FileManager.default.removeItem(atPath: path)
-            }
-        }
-        self.defaults.removeObject(forKey: ArbigramCoreSettings.deletedMessagesKey)
     }
 
     private func set(_ key: Key, _ value: Bool) {

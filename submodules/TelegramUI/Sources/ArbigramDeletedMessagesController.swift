@@ -7,6 +7,7 @@ import TelegramPresentationData
 import TelegramStringFormatting
 import ItemListUI
 import PresentationDataUtils
+import TelegramCore
 import AccountContext
 import UndoUI
 import ArbigramSettings
@@ -113,7 +114,7 @@ public func arbigramDeletedMessagesController(context: AccountContext) -> ViewCo
     var presentImpl: ((ViewController) -> Void)?
 
     let arguments = ArbigramDeletedMessagesArguments(clear: {
-        ArbigramSettings.shared.clearDeletedMessages()
+        ArbigramSettings.shared.clearDeletedMessages(accountId: context.account.peerId.id._internalGetInt64Value())
         statePromise.set(stateValue.modify { current in
             var updated = current
             updated.revision += 1
@@ -142,13 +143,16 @@ public func arbigramDeletedMessagesController(context: AccountContext) -> ViewCo
     |> map { presentationData, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let isRussian = presentationData.strings.baseLanguageCode.hasPrefix("ru")
         // Newest first: the interesting one is always the one that just went.
-        let records = ArbigramSettings.shared.deletedMessages.reversed()
+        // This account's own list. One list across thirty accounts is not a
+        // record of anything, and a hidden account's messages have no business
+        // appearing under a visible one.
+        let records = ArbigramSettings.shared.deletedMessages(accountId: context.account.peerId.id._internalGetInt64Value()).reversed()
 
         var entries: [ArbigramDeletedMessagesEntry] = []
         if records.isEmpty {
             entries.append(.empty(isRussian
-                ? "Пока пусто. Сюда попадают входящие сообщения, которые собеседник удалил после того, как ты их получил."
-                : "Nothing yet. Incoming messages the other side deletes after they reached you land here."))
+                ? "Пока пусто. Сюда попадают входящие сообщения этого аккаунта, которые собеседник удалил после того, как ты их получил. У каждого аккаунта свой список."
+                : "Nothing yet. Incoming messages to this account that the other side deletes after they reached you land here. Each account keeps its own list."))
         } else {
             for (index, record) in records.enumerated() {
                 var title = record.chatTitle
@@ -171,8 +175,8 @@ public func arbigramDeletedMessagesController(context: AccountContext) -> ViewCo
             entries.append(.clear(isRussian ? "Очистить" : "Clear"))
         }
         entries.append(.info(isRussian
-            ? "Хранятся последние \(ArbigramSettings.deletedMessagesLimit) сообщений. Вложение сохраняется, если успело загрузиться до удаления — нажми на запись, чтобы положить его в галерею. Само сообщение из чата исчезает как обычно."
-            : "The last \(ArbigramSettings.deletedMessagesLimit) are kept. An attachment is kept if it had finished downloading before the delete arrived — tap a record to put it in your photos. The message itself leaves the chat as usual."))
+            ? "Хранятся последние \(ArbigramSettings.deletedMessagesLimit) сообщений этого аккаунта. Вложение сохраняется, если успело загрузиться до удаления — нажми на запись, чтобы положить его в галерею. Само сообщение из чата исчезает как обычно."
+            : "The last \(ArbigramSettings.deletedMessagesLimit) for this account are kept. An attachment is kept if it had finished downloading before the delete arrived — tap a record to put it in your photos. The message itself leaves the chat as usual."))
 
         let controllerState = ItemListControllerState(
             presentationData: ItemListPresentationData(presentationData),

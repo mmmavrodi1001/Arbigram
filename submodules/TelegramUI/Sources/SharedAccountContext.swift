@@ -528,9 +528,27 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         // launch rather than once, so an edited definition ships with a build
         // instead of being stuck behind a first-run flag.
         for arbigramTheme in ArbigramTheme.allCases {
-            if let data = arbigramTheme.encoded() {
-                self.accountManager.mediaBox.storeResourceData(arbigramTheme.resource.id, data: data, synchronous: true)
+            guard let data = arbigramTheme.encoded() else {
+                continue
             }
+            // Comparing against what is stored keeps an edited definition
+            // shipping with a build without rewriting four files every launch.
+            if let existingPath = self.accountManager.mediaBox.completedResourcePath(arbigramTheme.resource),
+               let existing = try? Data(contentsOf: URL(fileURLWithPath: existingPath), options: .mappedIfSafe),
+               existing == data {
+                continue
+            }
+            self.accountManager.mediaBox.storeResourceData(arbigramTheme.resource.id, data: data, synchronous: true)
+        }
+
+        // ARBIGRAM: raising a notification is the app's job, not the engine's,
+        // so the engine hands the records up rather than reaching for UIKit.
+        ArbigramCoreSettings.shared.onDeletedMessagesRecorded = { [weak self] records, _ in
+            guard let self, ArbigramSettings.shared.announceDeletedMessages else {
+                return
+            }
+            let isRussian = self.currentPresentationData.with({ $0 }).strings.baseLanguageCode.hasPrefix("ru")
+            arbigramAnnounceDeletedMessages(records, isRussian: isRussian)
         }
 
         // Selecting one, on the other hand, happens once. defaultSettings would
@@ -1671,27 +1689,30 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         sandbox = false
         #endif
         
-        // ARBIGRAM: the muted set is not a signal of its own — the store is
-        // readable from TelegramCore and so carries no SwiftSignalKit — so it is
-        // wrapped into one here off the change notification.
-        let arbigramMutedAccountIds: Signal<Set<Int64>, NoError> = Signal { subscriber in
-            subscriber.putNext(ArbigramSettings.shared.mutedAccountIds)
+        // ARBIGRAM: the suppressed set — accounts switched off, plus every
+        // hidden one — is not a signal of its own, since the store is readable
+        // from TelegramCore and carries no SwiftSignalKit. It is wrapped into
+        // one here off the change notification.
+        let arbigramPushSettings: Signal<(suppressed: Set<Int64>, plain: Bool), NoError> = Signal { subscriber in
+            subscriber.putNext((ArbigramSettings.shared.notificationSuppressedAccountIds, ArbigramSettings.shared.plainNotifications))
             let observer = NotificationCenter.default.addObserver(forName: ArbigramSettings.changedNotification, object: nil, queue: .main) { _ in
-                subscriber.putNext(ArbigramSettings.shared.mutedAccountIds)
+                subscriber.putNext((ArbigramSettings.shared.notificationSuppressedAccountIds, ArbigramSettings.shared.plainNotifications))
             }
             return ActionDisposable {
                 NotificationCenter.default.removeObserver(observer)
             }
         }
-        |> distinctUntilChanged
+        |> distinctUntilChanged(isEqual: { lhs, rhs in
+            return lhs.suppressed == rhs.suppressed && lhs.plain == rhs.plain
+        })
 
         let settings = combineLatest(
             self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings]),
-            arbigramMutedAccountIds
+            arbigramPushSettings
         )
-        |> map { sharedData, mutedAccountIds -> (allAccounts: Bool, includeMuted: Bool, arbigramMutedAccountIds: Set<Int64>) in
+        |> map { sharedData, arbigram -> (allAccounts: Bool, includeMuted: Bool, arbigramMutedAccountIds: Set<Int64>, arbigramPlain: Bool) in
             let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? InAppNotificationSettings.defaultSettings
-            return (settings.displayNotificationsFromAllAccounts, false, mutedAccountIds)
+            return (settings.displayNotificationsFromAllAccounts, false, arbigram.suppressed, arbigram.plain)
         }
         |> distinctUntilChanged(isEqual: { lhs, rhs in
             if lhs.allAccounts != rhs.allAccounts {
@@ -1701,6 +1722,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 return false
             }
             if lhs.arbigramMutedAccountIds != rhs.arbigramMutedAccountIds {
+                return false
+            }
+            if lhs.arbigramPlain != rhs.arbigramPlain {
                 return false
             }
             return true
@@ -1770,7 +1794,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                     }
                 } else {
                     if let apsNotificationToken {
-                        appliedAps = account.engine.accountData.registerNotificationToken(token: apsNotificationToken, type: .aps(encrypt: true), sandbox: sandbox, otherAccountUserIds: (account.account.testingEnvironment ? activeTestingUserIds : activeProductionUserIds).filter({ $0 != account.account.peerId.id }), excludeMutedChats: !settings.includeMuted)
+                        // ARBIGRAM: registering without encryption makes the
+                        // server send the text in the payload, so iOS can show
+                        // it without the extension that would normally decrypt
+                        // it — and that extension is the one this signing
+                        // profile cannot cover. The cost is that the message
+                        // text is readable to whoever handles the push.
+                        appliedAps = account.engine.accountData.registerNotificationToken(token: apsNotificationToken, type: .aps(encrypt: !settings.arbigramPlain), sandbox: sandbox, otherAccountUserIds: (account.account.testingEnvironment ? activeTestingUserIds : activeProductionUserIds).filter({ $0 != account.account.peerId.id }), excludeMutedChats: !settings.includeMuted)
                     } else {
                         appliedAps = .single(true)
                     }

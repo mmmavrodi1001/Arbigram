@@ -12,7 +12,7 @@ import ArbigramCore
 ///
 /// Only incoming messages are recorded. Deleting your own message is a decision
 /// you made, and logging it would turn a fork feature into a hoarder.
-func arbigramRecordDeletedMessages(transaction: Transaction, mediaBox: MediaBox, ids: [MessageId]) {
+func arbigramRecordDeletedMessages(transaction: Transaction, mediaBox: MediaBox, accountPeerId: PeerId, ids: [MessageId]) {
     if !ArbigramCoreSettings.shared.keepDeletedMessages {
         return
     }
@@ -104,16 +104,16 @@ func arbigramRecordDeletedMessages(transaction: Transaction, mediaBox: MediaBox,
     }
 
     if !records.isEmpty {
-        ArbigramCoreSettings.shared.appendDeletedMessages(records)
+        ArbigramCoreSettings.shared.appendDeletedMessages(records, accountId: accountPeerId.id._internalGetInt64Value())
     }
 }
 
 /// The global-id variants of the same updates never name a message directly.
-func arbigramRecordDeletedMessagesWithGlobalIds(transaction: Transaction, mediaBox: MediaBox, globalIds: [Int32]) {
+func arbigramRecordDeletedMessagesWithGlobalIds(transaction: Transaction, mediaBox: MediaBox, accountPeerId: PeerId, globalIds: [Int32]) {
     if !ArbigramCoreSettings.shared.keepDeletedMessages {
         return
     }
-    arbigramRecordDeletedMessages(transaction: transaction, mediaBox: mediaBox, ids: transaction.messageIdsForGlobalIds(globalIds))
+    arbigramRecordDeletedMessages(transaction: transaction, mediaBox: mediaBox, accountPeerId: accountPeerId, ids: transaction.messageIdsForGlobalIds(globalIds))
 }
 
 private func arbigramExtension(forMimeType mimeType: String) -> String {

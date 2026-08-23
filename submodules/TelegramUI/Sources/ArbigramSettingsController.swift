@@ -6,6 +6,7 @@ import TelegramPresentationData
 import ItemListUI
 import PresentationDataUtils
 import AccountContext
+import TelegramCore
 import ArbigramSettings
 import AccountUtils
 
@@ -26,6 +27,8 @@ private enum ArbigramSettingsSection: Int32 {
     case contactsTab
     case secretMedia
     case deletedMessages
+    case deletedAlerts
+    case plainNotifications
     case notificationAccounts
     case accounts
     case secretPhrase
@@ -57,6 +60,8 @@ private enum ArbigramSwitch: Int32, CaseIterable {
     case hideContactsTab
     case saveSecretMedia
     case keepDeletedMessages
+    case announceDeletedMessages
+    case plainNotifications
 
     var section: ArbigramSettingsSection {
         switch self {
@@ -69,6 +74,8 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .hideContactsTab: return .contactsTab
         case .saveSecretMedia: return .secretMedia
         case .keepDeletedMessages: return .deletedMessages
+        case .announceDeletedMessages: return .deletedAlerts
+        case .plainNotifications: return .plainNotifications
         }
     }
 
@@ -92,6 +99,10 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings, "Сохранять сгорающие медиа", "Save Self-Destructing Media")
         case .keepDeletedMessages:
             return loc(strings, "Сохранять удалённые сообщения", "Keep Deleted Messages")
+        case .announceDeletedMessages:
+            return loc(strings, "Уведомлять об удалённых", "Notify About Deletions")
+        case .plainNotifications:
+            return loc(strings, "Текст в уведомлениях", "Text in Notifications")
         }
     }
 
@@ -133,6 +144,14 @@ private enum ArbigramSwitch: Int32, CaseIterable {
             return loc(strings,
                        "Когда собеседник удаляет присланное сообщение, его текст и вид вложения остаются в отдельном списке. Само сообщение из чата всё равно исчезает — трогать хранилище переписки ради этого слишком рискованно. Свои удалённые сообщения не записываются.",
                        "When the other side deletes a message they sent you, its text and attachment kind stay in a separate list. The message still leaves the chat — rewriting the message store for this is not worth the risk. Your own deletions are not recorded.")
+        case .announceDeletedMessages:
+            return loc(strings,
+                       "Показывать уведомление в момент удаления, а не ждать, пока ты откроешь список. Пачка удалённых сообщений приходит одним уведомлением, а не полусотней.",
+                       "Show a notification when the deletion happens instead of waiting until the list is opened. A batch arrives as one notification rather than fifty.")
+        case .plainNotifications:
+            return loc(strings,
+                       "Вернуть текст в уведомления. Обычно его расшифровывает отдельный компонент, который наша подпись не покрывает — поэтому приходит «Новое сообщение». Тут телефон просит сервер присылать текст сразу, без шифрования: он становится виден тем, через кого проходит уведомление. Переподключение занимает пару минут.",
+                       "Puts the text back into notifications. It is normally decrypted by a separate component this signing profile cannot cover, which is why they arrive blank. This asks the server to send the text in the clear instead, so it becomes readable to whoever handles the push. Re-registering takes a couple of minutes.")
         }
     }
 
@@ -147,6 +166,8 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .hideContactsTab: return settings.hideContactsTab
         case .saveSecretMedia: return settings.saveSecretMedia
         case .keepDeletedMessages: return settings.keepDeletedMessages
+        case .announceDeletedMessages: return settings.announceDeletedMessages
+        case .plainNotifications: return settings.plainNotifications
         }
     }
 
@@ -161,6 +182,8 @@ private enum ArbigramSwitch: Int32, CaseIterable {
         case .hideContactsTab: ArbigramSettings.shared.hideContactsTab = value
         case .saveSecretMedia: ArbigramSettings.shared.saveSecretMedia = value
         case .keepDeletedMessages: ArbigramSettings.shared.keepDeletedMessages = value
+        case .announceDeletedMessages: ArbigramSettings.shared.announceDeletedMessages = value
+        case .plainNotifications: ArbigramSettings.shared.plainNotifications = value
         }
     }
 }
@@ -270,13 +293,15 @@ private struct ArbigramSettingsState: Equatable {
     var hideContactsTab: Bool
     var saveSecretMedia: Bool
     var keepDeletedMessages: Bool
+    var announceDeletedMessages: Bool
+    var plainNotifications: Bool
     var deletedMessageCount: Int
     var mutedAccountCount: Int
     var secretPhrase: String
     var hasHiddenAccounts: Bool
     var hiddenRevealed: Bool
 
-    init() {
+    init(accountId: Int64) {
         let settings = ArbigramSettings.shared
         self.hideStories = settings.hideStories
         self.hideSponsoredMessages = settings.hideSponsoredMessages
@@ -287,7 +312,9 @@ private struct ArbigramSettingsState: Equatable {
         self.hideContactsTab = settings.hideContactsTab
         self.saveSecretMedia = settings.saveSecretMedia
         self.keepDeletedMessages = settings.keepDeletedMessages
-        self.deletedMessageCount = settings.deletedMessages.count
+        self.announceDeletedMessages = settings.announceDeletedMessages
+        self.plainNotifications = settings.plainNotifications
+        self.deletedMessageCount = settings.deletedMessages(accountId: accountId).count
         self.mutedAccountCount = settings.mutedAccountIds.count
         self.secretPhrase = settings.secretPhrase
         self.hasHiddenAccounts = settings.hasHiddenAccounts
@@ -299,20 +326,20 @@ private struct ArbigramSettingsState: Equatable {
 /// TelegramCore, which rules out the account manager. So the screen re-reads the
 /// store after every write.
 public func arbigramSettingsController(context: AccountContext) -> ViewController {
-    let statePromise = ValuePromise(ArbigramSettingsState(), ignoreRepeated: true)
+    let statePromise = ValuePromise(ArbigramSettingsState(accountId: context.account.peerId.id._internalGetInt64Value()), ignoreRepeated: true)
 
     var pushControllerImpl: ((ViewController) -> Void)?
 
     let arguments = ArbigramSettingsArguments(set: { item, value in
         item.write(value)
-        statePromise.set(ArbigramSettingsState())
+        statePromise.set(ArbigramSettingsState(accountId: context.account.peerId.id._internalGetInt64Value()))
     }, openNotificationAccounts: {
         pushControllerImpl?(arbigramNotificationAccountsController(context: context))
     }, openAccounts: {
         pushControllerImpl?(arbigramAccountsController(context: context))
     }, setSecretPhrase: { value in
         ArbigramSettings.shared.secretPhrase = value
-        statePromise.set(ArbigramSettingsState())
+        statePromise.set(ArbigramSettingsState(accountId: context.account.peerId.id._internalGetInt64Value()))
     }, openDeletedMessages: {
         pushControllerImpl?(arbigramDeletedMessagesController(context: context))
     })
@@ -357,7 +384,7 @@ public func arbigramSettingsController(context: AccountContext) -> ViewControlle
     // The count on the row is read from the store, so coming back from the
     // account list has to re-read it.
     controller.didAppear = { _ in
-        statePromise.set(ArbigramSettingsState())
+        statePromise.set(ArbigramSettingsState(accountId: context.account.peerId.id._internalGetInt64Value()))
     }
     pushControllerImpl = { [weak controller] c in
         controller?.push(c)

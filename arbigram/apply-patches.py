@@ -686,9 +686,27 @@ patch(
         // launch rather than once, so an edited definition ships with a build
         // instead of being stuck behind a first-run flag.
         for arbigramTheme in ArbigramTheme.allCases {
-            if let data = arbigramTheme.encoded() {
-                self.accountManager.mediaBox.storeResourceData(arbigramTheme.resource.id, data: data, synchronous: true)
+            guard let data = arbigramTheme.encoded() else {
+                continue
             }
+            // Comparing against what is stored keeps an edited definition
+            // shipping with a build without rewriting four files every launch.
+            if let existingPath = self.accountManager.mediaBox.completedResourcePath(arbigramTheme.resource),
+               let existing = try? Data(contentsOf: URL(fileURLWithPath: existingPath), options: .mappedIfSafe),
+               existing == data {
+                continue
+            }
+            self.accountManager.mediaBox.storeResourceData(arbigramTheme.resource.id, data: data, synchronous: true)
+        }
+
+        // ARBIGRAM: raising a notification is the app's job, not the engine's,
+        // so the engine hands the records up rather than reaching for UIKit.
+        ArbigramCoreSettings.shared.onDeletedMessagesRecorded = { [weak self] records, _ in
+            guard let self, ArbigramSettings.shared.announceDeletedMessages else {
+                return
+            }
+            let isRussian = self.currentPresentationData.with({ $0 }).strings.baseLanguageCode.hasPrefix("ru")
+            arbigramAnnounceDeletedMessages(records, isRussian: isRussian)
         }
 
         // Selecting one, on the other hand, happens once. defaultSettings would
@@ -863,7 +881,9 @@ patch(
 # ------------------------------------------------- 15. notifications by account
 # Upstream offers all accounts or only the active one. Leaving an account out of
 # the id lists below unregisters its push token, so the server stops sending for
-# it rather than the app hiding what arrives.
+# it rather than the app hiding what arrives. Registering unencrypted is what
+# puts the text back into the banner without the extension that would normally
+# decrypt it — the one this signing profile cannot cover.
 SHARED_CONTEXT = 'submodules/TelegramUI/Sources/SharedAccountContext.swift'
 patch(
     SHARED_CONTEXT,
@@ -872,29 +892,48 @@ patch(
             let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? InAppNotificationSettings.defaultSettings
             return (settings.displayNotificationsFromAllAccounts, false)
         }""",
-    """        // ARBIGRAM: the muted set is not a signal of its own — the store is
-        // readable from TelegramCore and so carries no SwiftSignalKit — so it is
-        // wrapped into one here off the change notification.
-        let arbigramMutedAccountIds: Signal<Set<Int64>, NoError> = Signal { subscriber in
-            subscriber.putNext(ArbigramSettings.shared.mutedAccountIds)
+    """        // ARBIGRAM: the suppressed set — accounts switched off, plus every
+        // hidden one — is not a signal of its own, since the store is readable
+        // from TelegramCore and carries no SwiftSignalKit. It is wrapped into
+        // one here off the change notification.
+        let arbigramPushSettings: Signal<(suppressed: Set<Int64>, plain: Bool), NoError> = Signal { subscriber in
+            subscriber.putNext((ArbigramSettings.shared.notificationSuppressedAccountIds, ArbigramSettings.shared.plainNotifications))
             let observer = NotificationCenter.default.addObserver(forName: ArbigramSettings.changedNotification, object: nil, queue: .main) { _ in
-                subscriber.putNext(ArbigramSettings.shared.mutedAccountIds)
+                subscriber.putNext((ArbigramSettings.shared.notificationSuppressedAccountIds, ArbigramSettings.shared.plainNotifications))
             }
             return ActionDisposable {
                 NotificationCenter.default.removeObserver(observer)
             }
         }
-        |> distinctUntilChanged
+        |> distinctUntilChanged(isEqual: { lhs, rhs in
+            return lhs.suppressed == rhs.suppressed && lhs.plain == rhs.plain
+        })
 
         let settings = combineLatest(
             self.accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.inAppNotificationSettings]),
-            arbigramMutedAccountIds
+            arbigramPushSettings
         )
-        |> map { sharedData, mutedAccountIds -> (allAccounts: Bool, includeMuted: Bool, arbigramMutedAccountIds: Set<Int64>) in
+        |> map { sharedData, arbigram -> (allAccounts: Bool, includeMuted: Bool, arbigramMutedAccountIds: Set<Int64>, arbigramPlain: Bool) in
             let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.inAppNotificationSettings]?.get(InAppNotificationSettings.self) ?? InAppNotificationSettings.defaultSettings
-            return (settings.displayNotificationsFromAllAccounts, false, mutedAccountIds)
-        }""",
-    'notifications: muted set as a signal',
+            return (settings.displayNotificationsFromAllAccounts, false, arbigram.suppressed, arbigram.plain)
+        }
+        |> distinctUntilChanged(isEqual: { lhs, rhs in
+            if lhs.allAccounts != rhs.allAccounts {
+                return false
+            }
+            if lhs.includeMuted != rhs.includeMuted {
+                return false
+            }
+            if lhs.arbigramMutedAccountIds != rhs.arbigramMutedAccountIds {
+                return false
+            }
+            if lhs.arbigramPlain != rhs.arbigramPlain {
+                return false
+            }
+            return true
+        })
+        """,
+    'notifications: suppressed set and plain text',
 )
 
 patch(
@@ -910,9 +949,12 @@ patch(
             if lhs.arbigramMutedAccountIds != rhs.arbigramMutedAccountIds {
                 return false
             }
+            if lhs.arbigramPlain != rhs.arbigramPlain {
+                return false
+            }
             return true
         })""",
-    'notifications: muted set re-registers',
+    'notifications: re-register on change',
 )
 
 patch(
@@ -939,7 +981,20 @@ patch(
             }
             
             for (_, account, _) in activeAccounts {""",
-    'notifications: muted accounts dropped',
+    'notifications: suppressed accounts dropped',
+)
+
+patch(
+    SHARED_CONTEXT,
+    '                        appliedAps = account.engine.accountData.registerNotificationToken(token: apsNotificationToken, type: .aps(encrypt: true), sandbox: sandbox,',
+    """                        // ARBIGRAM: registering without encryption makes the
+                        // server send the text in the payload, so iOS can show
+                        // it without the extension that would normally decrypt
+                        // it — and that extension is the one this signing
+                        // profile cannot cover. The cost is that the message
+                        // text is readable to whoever handles the push.
+                        appliedAps = account.engine.accountData.registerNotificationToken(token: apsNotificationToken, type: .aps(encrypt: !settings.arbigramPlain), sandbox: sandbox, otherAccountUserIds: (account.account.testingEnvironment ? activeTestingUserIds : activeProductionUserIds).filter({ $0 != account.account.peerId.id }), excludeMutedChats: !settings.includeMuted)""",
+    'notifications: readable payload',
 )
 
 # --------------------------------------------------- 16. hidden accounts
@@ -1095,7 +1150,7 @@ patch(
     """            case let .DeleteMessagesWithGlobalIds(ids):
                 var resourceIds: [MediaResourceId] = []""",
     """            case let .DeleteMessagesWithGlobalIds(ids):
-                arbigramRecordDeletedMessagesWithGlobalIds(transaction: transaction, mediaBox: mediaBox, globalIds: ids) // ARBIGRAM
+                arbigramRecordDeletedMessagesWithGlobalIds(transaction: transaction, mediaBox: mediaBox, accountPeerId: accountPeerId, globalIds: ids) // ARBIGRAM
                 var resourceIds: [MediaResourceId] = []""",
     'deleted messages: global id path',
 )
@@ -1105,7 +1160,7 @@ patch(
     """            case let .DeleteMessages(ids):
                 _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in""",
     """            case let .DeleteMessages(ids):
-                arbigramRecordDeletedMessages(transaction: transaction, mediaBox: mediaBox, ids: ids) // ARBIGRAM
+                arbigramRecordDeletedMessages(transaction: transaction, mediaBox: mediaBox, accountPeerId: accountPeerId, ids: ids) // ARBIGRAM
                 _internal_deleteMessages(transaction: transaction, mediaBox: mediaBox, ids: ids, manualAddMessageThreadStatsDifference: { id, add, remove in""",
     'deleted messages: message id path',
 )
@@ -1258,6 +1313,42 @@ for accounts_gate in [
         'account limit: premium in %s' % accounts_gate.split('/')[-1].replace('.swift', ''),
         count=2,
     )
+
+# ------------------------------------------------------ 21. logging out asks
+# The only action in the fork that cannot be undone from inside the app.
+patch(
+    'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/BUILD',
+    '        "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM',
+    '        "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM\n        "//submodules/PromptUI",  # ARBIGRAM',
+    'logout: prompt dependency',
+)
+
+patch(
+    'submodules/TelegramUI/Components/PeerInfo/PeerInfoScreen/Sources/PeerInfoSettingsTabActions.swift',
+    """        items.append(ActionSheetButtonItem(title: self.presentationData.strings.Settings_Logout, color: .destructive, action: { [weak self] in
+            dismissAction()
+            if let strongSelf = self {
+                let _ = logoutFromAccount(id: id, accountManager: strongSelf.context.sharedContext.accountManager, alreadyLoggedOutRemotely: false).startStandalone()
+            }
+        }))""",
+    """        items.append(ActionSheetButtonItem(title: self.presentationData.strings.Settings_Logout, color: .destructive, action: { [weak self] in
+            dismissAction()
+            guard let strongSelf = self else {
+                return
+            }
+            // ARBIGRAM: with a phrase set, logging out asks for it. This is the
+            // only action here that cannot be undone from inside the app.
+            arbigramRequireSecretPhrase(context: strongSelf.context, present: { [weak self] controller in
+                self?.controller?.present(controller, in: .window(.root))
+            }, proceed: { [weak self] in
+                guard let strongSelf = self else {
+                    return
+                }
+                let _ = logoutFromAccount(id: id, accountManager: strongSelf.context.sharedContext.accountManager, alreadyLoggedOutRemotely: false).startStandalone()
+            })
+        }))""",
+    'logout: asks for the phrase',
+)
 
 # ------------------------------------------------------------------- report
 for label, detail in APPLIED:

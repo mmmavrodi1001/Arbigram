@@ -11,6 +11,7 @@ import ItemListPeerItem
 import PresentationDataUtils
 import AccountContext
 import AccountUtils
+import PeerInfoScreen
 import ArbigramSettings
 
 private let arbigramAccountsSectionPinned: ItemListSectionId = 0
@@ -19,9 +20,29 @@ private let arbigramAccountsSectionOther: ItemListSectionId = 1
 /// Telegram already stores an order per account record — the iOS app just never
 /// offered a way to change it. Writing it here means the new order is the real
 /// one, and every list that shows accounts follows.
+///
+/// Records the screen did not show — hidden accounts — keep their relative
+/// order and go after the visible ones. Numbering only what is on screen would
+/// leave the hidden ones holding indices that now belong to somebody else, and
+/// they would land in the middle of the list the next time they appeared.
 private func applyArbigramAccountOrder(context: AccountContext, orderedIds: [AccountRecordId]) -> Signal<Never, NoError> {
     return context.sharedContext.accountManager.transaction { transaction -> Void in
-        for (index, id) in orderedIds.enumerated() {
+        func currentOrder(_ record: AccountRecord<TelegramAccountManagerTypes.Attribute>) -> Int32 {
+            for attribute in record.attributes {
+                if case let .sortOrder(sortOrder) = attribute {
+                    return sortOrder.order
+                }
+            }
+            return 0
+        }
+
+        let listed = Set(orderedIds)
+        let trailing = transaction.getRecords()
+            .filter { !listed.contains($0.id) }
+            .sorted { currentOrder($0) < currentOrder($1) }
+            .map { $0.id }
+
+        for (index, id) in (orderedIds + trailing).enumerated() {
             transaction.updateRecord(id, { record in
                 guard let record else {
                     return nil
@@ -213,6 +234,9 @@ private struct ArbigramAccountsState: Equatable {
     var metaRevision: Int = 0
     var selecting: Bool = false
     var selectedIds: Set<Int64> = []
+    /// The record id is what logging out takes, and it is not derivable from
+    /// the user id without going back to the account manager.
+    var selectedRecordIds: [Int64: AccountRecordId] = [:]
 }
 
 public func arbigramAccountsController(context: AccountContext) -> ViewController {
@@ -263,9 +287,11 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
         let isRussian = presentationData.strings.baseLanguageCode.hasPrefix("ru")
         let storedMeta = ArbigramSettings.shared.accountMeta
 
+        var recordIds: [Int64: AccountRecordId] = [:]
         var rows: [(row: ArbigramAccountRow, context: AccountContext)] = []
         for (accountContext, peer, unreadCount) in accountsAndPeers.1 {
             let userId = accountContext.account.peerId.id._internalGetInt64Value()
+            recordIds[userId] = accountContext.account.id
             rows.append((ArbigramAccountRow(
                 recordId: accountContext.account.id,
                 userId: userId,
@@ -289,6 +315,14 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
             }
             reordered.append(contentsOf: rows.filter { byId[$0.row.userId] != nil })
             rows = reordered
+        }
+
+        // Kept on the state so the action sheet, which runs later and
+        // elsewhere, can turn a selection into something logout can take.
+        if stateValue.with({ $0.selectedRecordIds }) != recordIds {
+            Queue.mainQueue().async {
+                updateState { $0.selectedRecordIds = recordIds }
+            }
         }
 
         let pinned = rows.filter { $0.row.meta.pinned }
@@ -442,6 +476,43 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
                 applyToSelection { $0.hidden = false }
             }))
         }
+
+        // Logging out sits apart from the rest and asks twice: once to be
+        // sure, once for the phrase. Everything above it can be undone by
+        // doing the opposite; this cannot be undone from inside the app at all.
+        items.append(ActionSheetButtonItem(title: isRussian ? "Выйти из аккаунтов" : "Log Out", color: .destructive, action: {
+            dismissActionSheetImpl?()
+            let recordIds = stateValue.with { state -> [AccountRecordId] in
+                return state.selectedRecordIds.filter { selectedIds.contains($0.key) }.map { $0.value }
+            }
+            if recordIds.isEmpty {
+                return
+            }
+            let confirmation = textAlertController(
+                context: context,
+                title: isRussian ? "Выйти из аккаунтов" : "Log Out",
+                text: isRussian
+                    ? "Выход необратим: чтобы вернуться, понадобится номер и код. Аккаунтов: \(recordIds.count)."
+                    : "Logging out cannot be undone — getting back in needs the phone and a code. Accounts: \(recordIds.count).",
+                actions: [
+                    TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+                    TextAlertAction(type: .destructiveAction, title: isRussian ? "Выйти" : "Log Out", action: {
+                        arbigramRequireSecretPhrase(context: context, present: { controller in
+                            presentControllerImpl?(controller)
+                        }, proceed: {
+                            for recordId in recordIds {
+                                let _ = logoutFromAccount(id: recordId, accountManager: context.sharedContext.accountManager, alreadyLoggedOutRemotely: false).startStandalone()
+                            }
+                            updateState { state in
+                                state.selecting = false
+                                state.selectedIds = []
+                            }
+                        })
+                    })
+                ]
+            )
+            presentControllerImpl?(confirmation)
+        }))
 
         let actionSheet = ActionSheetController(presentationData: presentationData)
         dismissActionSheetImpl = { [weak actionSheet] in

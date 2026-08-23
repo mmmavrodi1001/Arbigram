@@ -124,14 +124,24 @@ public final class ArbigramSettings {
         set { ArbigramCoreSettings.shared.keepDeletedMessages = newValue }
     }
 
-    public static let deletedMessagesLimit = ArbigramCoreSettings.deletedMessagesLimit
-
-    public var deletedMessages: [ArbigramDeletedMessage] {
-        return ArbigramCoreSettings.shared.deletedMessages
+    public var announceDeletedMessages: Bool {
+        get { return ArbigramCoreSettings.shared.announceDeletedMessages }
+        set { ArbigramCoreSettings.shared.announceDeletedMessages = newValue }
     }
 
-    public func clearDeletedMessages() {
-        ArbigramCoreSettings.shared.clearDeletedMessages()
+    public var plainNotifications: Bool {
+        get { return ArbigramCoreSettings.shared.plainNotifications }
+        set { ArbigramCoreSettings.shared.plainNotifications = newValue }
+    }
+
+    public static let deletedMessagesLimit = ArbigramCoreSettings.deletedMessagesLimit
+
+    public func deletedMessages(accountId: Int64) -> [ArbigramDeletedMessage] {
+        return ArbigramCoreSettings.shared.deletedMessages(accountId: accountId)
+    }
+
+    public func clearDeletedMessages(accountId: Int64?) {
+        ArbigramCoreSettings.shared.clearDeletedMessages(accountId: accountId)
     }
 
     public func deletedMediaPath(_ name: String) -> String? {
@@ -201,6 +211,17 @@ public final class ArbigramSettings {
         return self.mutedAccountIds.contains(id)
     }
 
+    /// Accounts that must not raise a notification: the ones switched off, plus
+    /// every hidden one. A hidden account whose banner still appears has no
+    /// trace anywhere except the one place it matters.
+    public var notificationSuppressedAccountIds: Set<Int64> {
+        var result = self.mutedAccountIds
+        for (id, meta) in self.accountMeta where meta.hidden {
+            result.insert(id)
+        }
+        return result
+    }
+
     public func setAccount(_ id: Int64, muted: Bool) {
         var ids = self.mutedAccountIds
         if muted {
@@ -232,6 +253,16 @@ public final class ArbigramSettings {
         }
     }
 
+    /// Whether the text is the phrase. Used to gate logging out, which is the
+    /// one action here that cannot be undone from inside the app.
+    public func matchesSecretPhrase(_ text: String) -> Bool {
+        let phrase = self.secretPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        if phrase.isEmpty {
+            return false
+        }
+        return text.trimmingCharacters(in: .whitespacesAndNewlines).compare(phrase, options: .caseInsensitive) == .orderedSame
+    }
+
     public var hasHiddenAccounts: Bool {
         return self.accountMeta.values.contains(where: { $0.hidden })
     }
@@ -239,13 +270,27 @@ public final class ArbigramSettings {
     /// Called with whatever was typed into chat search. Returns true when the
     /// text was the phrase, in which case it is swallowed and never searched
     /// for — the point is that nothing on screen reacts.
+    /// The last text the search field reported, so the toggle fires on the
+    /// moment the phrase is typed rather than on every report of it. The field
+    /// repeats itself, and deleting a character and putting it back would
+    /// otherwise flip the mode twice.
+    private var lastSearchText: String = ""
+
     public func consumeSecretPhrase(_ text: String) -> Bool {
         let phrase = self.secretPhrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = self.lastSearchText
+        self.lastSearchText = trimmed
+
         if phrase.isEmpty {
             return false
         }
-        if text.trimmingCharacters(in: .whitespacesAndNewlines).compare(phrase, options: .caseInsensitive) != .orderedSame {
+        if trimmed.compare(phrase, options: .caseInsensitive) != .orderedSame {
             return false
+        }
+        if previous.compare(phrase, options: .caseInsensitive) == .orderedSame {
+            // Already the phrase a moment ago: this is a repeat, not a new one.
+            return true
         }
         self.hiddenRevealedValue = !self.hiddenRevealedValue
         NotificationCenter.default.post(name: ArbigramSettings.changedNotification, object: nil)
@@ -254,21 +299,29 @@ public final class ArbigramSettings {
 
     /// Stored as one JSON blob: the shape changes as the fork grows, and a
     /// single value keeps reads and writes atomic without a schema in defaults.
+    /// Decoding this on every read cost a JSON parse per account per render of
+    /// the settings list, which is thirty parses a scroll at thirty accounts.
+    private var cachedAccountMeta: [Int64: ArbigramAccountMeta]?
+
     public var accountMeta: [Int64: ArbigramAccountMeta] {
         get {
-            guard let data = self.defaults.data(forKey: ArbigramSettings.accountMetaKey),
-                  let decoded = try? JSONDecoder().decode([String: ArbigramAccountMeta].self, from: data) else {
-                return [:]
+            if let cached = self.cachedAccountMeta {
+                return cached
             }
             var result: [Int64: ArbigramAccountMeta] = [:]
-            for (key, value) in decoded {
-                if let id = Int64(key) {
-                    result[id] = value
+            if let data = self.defaults.data(forKey: ArbigramSettings.accountMetaKey),
+               let decoded = try? JSONDecoder().decode([String: ArbigramAccountMeta].self, from: data) {
+                for (key, value) in decoded {
+                    if let id = Int64(key) {
+                        result[id] = value
+                    }
                 }
             }
+            self.cachedAccountMeta = result
             return result
         }
         set {
+            self.cachedAccountMeta = newValue
             var encodable: [String: ArbigramAccountMeta] = [:]
             for (id, value) in newValue where !value.isEmpty {
                 encodable["\(id)"] = value

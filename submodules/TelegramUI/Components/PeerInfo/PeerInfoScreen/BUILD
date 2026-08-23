@@ -12,6 +12,7 @@ swift_library(
     deps = [
         "//submodules/AccountContext",
         "//submodules/ArbigramSettings:ArbigramSettings",  # ARBIGRAM
+        "//submodules/PromptUI",  # ARBIGRAM
         "//submodules/AccountUtils",
         "//submodules/ActionSheetPeerItem",
         "//submodules/ActivityIndicator",

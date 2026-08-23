@@ -77,9 +77,19 @@ extension PeerInfoScreenNode {
         items.append(ActionSheetTextItem(title: self.presentationData.strings.Settings_LogoutConfirmationText.trimmingCharacters(in: .whitespacesAndNewlines)))
         items.append(ActionSheetButtonItem(title: self.presentationData.strings.Settings_Logout, color: .destructive, action: { [weak self] in
             dismissAction()
-            if let strongSelf = self {
-                let _ = logoutFromAccount(id: id, accountManager: strongSelf.context.sharedContext.accountManager, alreadyLoggedOutRemotely: false).startStandalone()
+            guard let strongSelf = self else {
+                return
             }
+            // ARBIGRAM: with a phrase set, logging out asks for it. This is the
+            // only action here that cannot be undone from inside the app.
+            arbigramRequireSecretPhrase(context: strongSelf.context, present: { [weak self] controller in
+                self?.controller?.present(controller, in: .window(.root))
+            }, proceed: { [weak self] in
+                guard let strongSelf = self else {
+                    return
+                }
+                let _ = logoutFromAccount(id: id, accountManager: strongSelf.context.sharedContext.accountManager, alreadyLoggedOutRemotely: false).startStandalone()
+            })
         }))
         controller.setItemGroups([
             ActionSheetItemGroup(items: items),
