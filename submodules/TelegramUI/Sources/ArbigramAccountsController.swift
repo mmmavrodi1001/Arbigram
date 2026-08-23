@@ -747,8 +747,8 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
                 context: context,
                 title: isRussian ? "Очистить личные чаты" : "Clear Private Chats",
                 text: isRussian
-                    ? "Переписка будет удалена у обеих сторон в \(peers.count) чатах — и твои сообщения, и собеседника. У него чат станет пустым. Это необратимо.\n\nГруппы, каналы и боты не затрагиваются: там чужие сообщения удалить нельзя."
-                    : "History will be deleted for both sides in \(peers.count) chats — your messages and theirs. Their chat becomes empty. This cannot be undone.\n\nGroups, channels and bots are untouched: nobody else's messages can be removed there.",
+                    ? "Переписка будет удалена у обеих сторон в \(peers.count) чатах — и твои сообщения, и собеседника. У него чат станет пустым. Это необратимо.\n\nГруппы, каналы и боты не затрагиваются: там чужие сообщения удалить нельзя. В отдельных чатах сервер может не дать удалить у собеседника — тогда там пропадёт только твоя половина."
+                    : "History will be deleted for both sides in \(peers.count) chats — your messages and theirs. Their chat becomes empty. This cannot be undone.\n\nGroups, channels and bots are untouched: nobody else's messages can be removed there. In some chats the server may refuse to remove the other side's half, and only yours goes.",
                 actions: [
                     TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
                     TextAlertAction(type: .destructiveAction, title: isRussian ? "Очистить" : "Clear", action: {
@@ -757,7 +757,7 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
                         }, proceed: {
                             let _ = (arbigramClearPrivateChats(context: accountContext, peers: peers)
                             |> deliverOnMainQueue).startStandalone(completed: {
-                                presentImpl?(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: isRussian ? "Готово: \(peers.count)" : "Done: \(peers.count)", timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }))
+                                presentImpl?(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: isRussian ? "Обработано чатов: \(peers.count)" : "\(peers.count) chats processed", timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }))
                             })
                         })
                     })
