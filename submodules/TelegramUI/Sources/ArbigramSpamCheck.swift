@@ -53,7 +53,12 @@ func arbigramCheckSpamStatus(context: AccountContext) -> Signal<ArbigramSpamStat
                 bubbleUpEmojiOrStickersets: []
             )
         ])
-        |> ignoreValues
+        // Typed as the reply rather than dropped to Never: `then` needs both
+        // sides to carry the same value, and a send that emits nothing still
+        // has to agree about what it is not emitting.
+        |> mapToSignal { _ -> Signal<ArbigramSpamStatus, NoError> in
+            return .complete()
+        }
 
         // The archive is asked for too: a conversation with a service bot is
         // exactly the kind a tidy person archives, and an archived chat is
