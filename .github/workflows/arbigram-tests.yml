@@ -47,14 +47,19 @@ jobs:
           cp -R "$GITHUB_WORKSPACE" /Users/Shared/
           mv "/Users/Shared/$(basename "$GITHUB_WORKSPACE")" /Users/Shared/arbigram
 
+      # A namespace of its own, and this is load-bearing. Sharing the build's
+      # key prefix meant every test run saved a ~50 MB cache that then won the
+      # build's restore-key fallback by being newest — so the build restored
+      # almost nothing and compiled the project from cold. One build went from
+      # fifteen minutes to over an hour before this was spotted.
       - name: Restore bazel cache
         uses: actions/cache/restore@v4
         with:
           path: ~/arbigram-bazel-cache
-          key: bazel-${{ runner.os }}-${{ hashFiles('versions.json') }}-${{ github.sha }}
+          key: bazel-tests-${{ runner.os }}-${{ hashFiles('versions.json') }}-${{ github.sha }}
           restore-keys: |
-            bazel-${{ runner.os }}-${{ hashFiles('versions.json') }}-
-            bazel-${{ runner.os }}-
+            bazel-tests-${{ runner.os }}-${{ hashFiles('versions.json') }}-
+            bazel-tests-${{ runner.os }}-
 
       # Make.py insists on a configuration even for tests, and the values do not
       # reach a test that never builds the app. Real ones stay in the build.
@@ -122,4 +127,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ~/arbigram-bazel-cache
-          key: bazel-${{ runner.os }}-${{ hashFiles('versions.json') }}-${{ github.sha }}
+          key: bazel-tests-${{ runner.os }}-${{ hashFiles('versions.json') }}-${{ github.sha }}
