@@ -92,7 +92,10 @@ public final class ArbigramSettings {
         }
     }
 
-    private let defaults: UserDefaults
+    // Internal rather than private: the spam-status store is an extension in
+    // its own file, and a private member is only reachable from the file that
+    // declares it.
+    let defaults: UserDefaults
 
     private convenience init() {
         // One suite for both halves, opened by the lower one.

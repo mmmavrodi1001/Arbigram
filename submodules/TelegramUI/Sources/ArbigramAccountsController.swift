@@ -15,8 +15,9 @@ import PeerInfoScreen
 import UndoUI
 import ArbigramSettings
 
-private let arbigramAccountsSectionPinned: ItemListSectionId = 0
-private let arbigramAccountsSectionOther: ItemListSectionId = 1
+private let arbigramAccountsSectionCheck: ItemListSectionId = 0
+private let arbigramAccountsSectionPinned: ItemListSectionId = 1
+private let arbigramAccountsSectionOther: ItemListSectionId = 2
 
 /// Telegram already stores an order per account record — the iOS app just never
 /// offered a way to change it. Writing it here means the new order is the real
@@ -68,9 +69,11 @@ private struct ArbigramAccountRow: Equatable {
     let peer: EnginePeer
     let meta: ArbigramAccountMeta
     let unreadCount: Int32
+    /// What the spam bot last said, or nothing if this account was never asked.
+    let spam: ArbigramSpamStatus?
 
     static func ==(lhs: ArbigramAccountRow, rhs: ArbigramAccountRow) -> Bool {
-        return lhs.recordId == rhs.recordId && lhs.userId == rhs.userId && lhs.peer == rhs.peer && lhs.meta == rhs.meta && lhs.unreadCount == rhs.unreadCount
+        return lhs.recordId == rhs.recordId && lhs.userId == rhs.userId && lhs.peer == rhs.peer && lhs.meta == rhs.meta && lhs.unreadCount == rhs.unreadCount && lhs.spam == rhs.spam
     }
 }
 
@@ -80,17 +83,21 @@ private final class ArbigramAccountsArguments {
     let togglePinned: (Int64) -> Void
     let setRevealed: (EnginePeer.Id?) -> Void
     let toggleSelected: (Int64) -> Void
+    let checkAll: () -> Void
 
-    init(context: AccountContext, openAccount: @escaping (Int64) -> Void, togglePinned: @escaping (Int64) -> Void, setRevealed: @escaping (EnginePeer.Id?) -> Void, toggleSelected: @escaping (Int64) -> Void) {
+    init(context: AccountContext, openAccount: @escaping (Int64) -> Void, togglePinned: @escaping (Int64) -> Void, setRevealed: @escaping (EnginePeer.Id?) -> Void, toggleSelected: @escaping (Int64) -> Void, checkAll: @escaping () -> Void) {
         self.context = context
         self.openAccount = openAccount
         self.togglePinned = togglePinned
         self.setRevealed = setRevealed
         self.toggleSelected = toggleSelected
+        self.checkAll = checkAll
     }
 }
 
 private enum ArbigramAccountsEntry: ItemListNodeEntry {
+    case check(String, Bool)
+    case checkInfo(String)
     case pinnedHeader(String)
     case otherHeader(String)
     case account(index: Int, pinned: Bool, row: ArbigramAccountRow, editing: Bool, revealed: Bool, selected: Bool?, context: AccountContext)
@@ -98,6 +105,8 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
 
     var section: ItemListSectionId {
         switch self {
+        case .check, .checkInfo:
+            return arbigramAccountsSectionCheck
         case .pinnedHeader:
             return arbigramAccountsSectionPinned
         case let .account(_, pinned, _, _, _, _, _):
@@ -109,6 +118,10 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
 
     var stableId: Int32 {
         switch self {
+        case .check:
+            return -2
+        case .checkInfo:
+            return -1
         case .pinnedHeader:
             return 0
         case .otherHeader:
@@ -122,6 +135,16 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
 
     static func ==(lhs: ArbigramAccountsEntry, rhs: ArbigramAccountsEntry) -> Bool {
         switch lhs {
+        case let .check(text, enabled):
+            if case .check(text, enabled) = rhs {
+                return true
+            }
+            return false
+        case let .checkInfo(text):
+            if case .checkInfo(text) = rhs {
+                return true
+            }
+            return false
         case let .pinnedHeader(text):
             if case .pinnedHeader(text) = rhs {
                 return true
@@ -152,6 +175,12 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! ArbigramAccountsArguments
         switch self {
+        case let .check(title, enabled):
+            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: enabled ? .generic : .disabled, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                arguments.checkAll()
+            })
+        case let .checkInfo(text):
+            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         case let .pinnedHeader(text), let .otherHeader(text):
             return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
         case let .info(text):
@@ -170,7 +199,31 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
                 }
             ))
 
-            let subtitle = row.meta.tags.map({ "#" + $0 }).joined(separator: " ")
+            // The verdict leads the line and the tags follow it. Colour is
+            // carried by the whole subtitle, so green means "this row is fine"
+            // at a glance down thirty rows — and its absence is the signal.
+            let rowIsRussian = presentationData.strings.baseLanguageCode.hasPrefix("ru")
+            var statusText: String?
+            var subtitleColor: ItemListPeerItemText.TextColor = .secondary
+            if let spam = row.spam {
+                switch spam.state {
+                case .clean:
+                    statusText = rowIsRussian ? "Чисто" : "No limits"
+                    subtitleColor = .constructive
+                case .limited:
+                    if spam.until.isEmpty {
+                        statusText = rowIsRussian ? "Ограничен" : "Limited"
+                    } else {
+                        statusText = (rowIsRussian ? "Ограничен до " : "Limited until ") + spam.until
+                    }
+                case .unknown:
+                    statusText = rowIsRussian ? "Ответа нет" : "No answer"
+                }
+            }
+            let subtitle = ([statusText] + [row.meta.tags.map({ "#" + $0 }).joined(separator: " ")])
+                .compactMap({ $0 })
+                .filter({ !$0.isEmpty })
+                .joined(separator: " · ")
 
             // The colour rides the badge: customAvatarIcon replaces the avatar
             // outright, which trades a photo for a dot — a bad deal.
@@ -199,7 +252,7 @@ private enum ArbigramAccountsEntry: ItemListNodeEntry {
                 context: itemContext,
                 peer: row.peer,
                 presence: nil,
-                text: subtitle.isEmpty ? .none : .text(subtitle, .secondary),
+                text: subtitle.isEmpty ? .none : .text(subtitle, subtitleColor),
                 label: label,
                 editing: ItemListPeerItemEditing(editable: true, editing: editing, canBeReordered: true, revealed: revealed),
                 revealOptions: ItemListPeerItemRevealOptions(options: [
@@ -238,6 +291,11 @@ private struct ArbigramAccountsState: Equatable {
     /// The record id is what logging out takes, and it is not derivable from
     /// the user id without going back to the account manager.
     var selectedRecordIds: [Int64: AccountRecordId] = [:]
+    var checking: Bool = false
+    var checkedCount: Int = 0
+    /// Bumped as each verdict lands, because the statuses live in settings
+    /// rather than in this state and nothing else would redraw the list.
+    var spamRevision: Int = 0
 }
 
 public func arbigramAccountsController(context: AccountContext) -> ViewController {
@@ -276,6 +334,26 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
                 state.selectedIds.insert(userId)
             }
         }
+    }, checkAll: {
+        if stateValue.with({ $0.checking }) {
+            return
+        }
+        updateState { state in
+            state.checking = true
+            state.checkedCount = 0
+        }
+        actionsDisposable.add((arbigramCheckAllSpamStatuses(context: context)
+        |> deliverOnMainQueue).start(next: { _ in
+            updateState { state in
+                state.checkedCount += 1
+                state.spamRevision += 1
+            }
+        }, completed: {
+            updateState { state in
+                state.checking = false
+                state.spamRevision += 1
+            }
+        }))
     })
 
     let signal = combineLatest(
@@ -287,6 +365,7 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
     |> map { presentationData, accountsAndPeers, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let isRussian = presentationData.strings.baseLanguageCode.hasPrefix("ru")
         let storedMeta = ArbigramSettings.shared.accountMeta
+        let storedSpam = ArbigramSettings.shared.spamStatuses
 
         var recordIds: [Int64: AccountRecordId] = [:]
         var rows: [(row: ArbigramAccountRow, context: AccountContext)] = []
@@ -298,7 +377,8 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
                 userId: userId,
                 peer: peer,
                 meta: storedMeta[userId] ?? ArbigramAccountMeta.empty,
-                unreadCount: unreadCount
+                unreadCount: unreadCount,
+                spam: storedSpam[userId]
             ), accountContext))
         }
 
@@ -330,6 +410,18 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
         let others = rows.filter { !$0.row.meta.pinned }
 
         var entries: [ArbigramAccountsEntry] = []
+
+        if state.checking {
+            entries.append(.check(isRussian
+                ? "Проверяю… \(state.checkedCount) из \(rows.count)"
+                : "Checking… \(state.checkedCount) of \(rows.count)", false))
+        } else {
+            entries.append(.check(isRussian ? "Проверить ограничения" : "Check limits", !rows.isEmpty))
+        }
+        entries.append(.checkInfo(isRussian
+            ? "Спрашивает служебного бота Telegram по каждому аккаунту и пишет ответ под именем. Аккаунты опрашиваются по очереди, с паузой, поэтому тридцать штук занимают пару минут."
+            : "Asks Telegram's own service bot about each account and writes the answer under its name. Accounts are asked one at a time, with a pause, so thirty of them take a couple of minutes."))
+
         var index = 0
         if !pinned.isEmpty {
             entries.append(.pinnedHeader(isRussian ? "ЗАКРЕПЛЁННЫЕ" : "PINNED"))
@@ -554,6 +646,7 @@ public func arbigramAccountsController(context: AccountContext) -> ViewControlle
 // MARK: - One account
 
 private enum ArbigramAccountDetailSection: Int32 {
+    case spam
     case pinned
     case clearChats
     case keepDeleted
@@ -581,6 +674,8 @@ private final class ArbigramAccountDetailArguments {
 }
 
 private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
+    case spamHeader(String)
+    case spamAnswer(String)
     case pinned(String, Bool)
     case keepDeleted(String, Bool)
     case keepDeletedInfo(String)
@@ -596,6 +691,8 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
 
     var section: ItemListSectionId {
         switch self {
+        case .spamHeader, .spamAnswer:
+            return ArbigramAccountDetailSection.spam.rawValue
         case .pinned:
             return ArbigramAccountDetailSection.pinned.rawValue
         case .keepDeleted, .keepDeletedInfo:
@@ -613,6 +710,10 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
 
     var stableId: Int32 {
         switch self {
+        case .spamHeader:
+            return -2
+        case .spamAnswer:
+            return -1
         case .pinned:
             return 0
         case .keepDeleted:
@@ -647,6 +748,10 @@ private enum ArbigramAccountDetailEntry: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! ArbigramAccountDetailArguments
         switch self {
+        case let .spamHeader(text):
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
+        case let .spamAnswer(text):
+            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         case let .pinned(title, value):
             return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: self.section, style: .blocks, updated: { value in
                 arguments.setPinned(value)
@@ -781,6 +886,36 @@ public func arbigramAccountDetailController(context: AccountContext, userId: Int
     |> map { presentationData, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let isRussian = presentationData.strings.baseLanguageCode.hasPrefix("ru")
         var entries: [ArbigramAccountDetailEntry] = []
+
+        // The list outside shows a verdict; here the bot's own sentence is
+        // printed whole, because a wording the parser did not recognise is
+        // still the answer, and guessing at it would be worse than showing it.
+        if let spam = ArbigramSettings.shared.spamStatus(for: userId) {
+            entries.append(.spamHeader(isRussian ? "ОГРАНИЧЕНИЯ" : "LIMITS"))
+            var lines: [String] = []
+            switch spam.state {
+            case .clean:
+                lines.append(isRussian ? "Ограничений нет." : "No limits.")
+            case .limited:
+                lines.append(spam.until.isEmpty
+                    ? (isRussian ? "Аккаунт ограничен." : "The account is limited.")
+                    : (isRussian ? "Аккаунт ограничен до " : "The account is limited until ") + spam.until + ".")
+            case .unknown:
+                lines.append(isRussian ? "Бот не ответил или ответил незнакомо." : "The bot did not answer, or answered in a way this does not read.")
+            }
+            if !spam.raw.isEmpty {
+                lines.append((isRussian ? "Ответ бота: " : "The bot said: ") + spam.raw)
+            }
+            if spam.checkedAt > 0 {
+                let formatter = DateFormatter()
+                formatter.dateStyle = .short
+                formatter.timeStyle = .short
+                let when = formatter.string(from: Date(timeIntervalSince1970: Double(spam.checkedAt)))
+                lines.append((isRussian ? "Проверено: " : "Checked: ") + when)
+            }
+            entries.append(.spamAnswer(lines.joined(separator: "\n\n")))
+        }
+
         entries.append(.pinned(isRussian ? "Закрепить наверху" : "Pin to the top", state.meta.pinned))
         if ArbigramSettings.shared.keepDeletedMessages {
             entries.append(.keepDeleted(isRussian ? "Сохранять удалённые здесь" : "Keep Deleted Messages Here", state.keepDeleted))
